@@ -11,7 +11,8 @@
   "dependencies": {
     "crystals-kyber-js": "^2.7.0",
     "jsqr": "^1.4.0",
-    "libsodium-wrappers-sumo": "^0.7.15",
+    "libsodium-sumo": "^0.8.4",
+    "libsodium-wrappers-sumo": "^0.8.4",
     "livekit-client": "^2.20.2",
     "lottie-web": "^5.13.0",
     "lucide-react": "^1.8.0",
