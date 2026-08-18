@@ -26,7 +26,7 @@ export async function api<T = any>(
   const headers: Record<string, string> = {
     ...((opts.headers as Record<string, string>) || {}),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token) headers["token"] = token;
   if (!(opts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
@@ -37,7 +37,7 @@ export async function api<T = any>(
   if (res.status === 401 && path !== "/api/auth/refresh") {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      headers["Authorization"] = `Bearer ${refreshed}`;
+      headers["token"] = refreshed;
       res = await fetch(`${getBase()}${path}`, { ...opts, headers });
     }
   }
@@ -120,7 +120,9 @@ export function ensureRefreshToken(): Promise<void> {
     try {
       const res = await fetch(`${getBase()}/api/auth/upgrade-session`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: {
+          token: `${localStorage.getItem("token")}`,
+        },
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.data?.refresh_token) {
@@ -200,7 +202,7 @@ export function uploadFileWithProgress(
 
     const token = localStorage.getItem("token");
     xhr.open("POST", `${getBase()}/api/upload`);
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    if (token) xhr.setRequestHeader("token", token);
     xhr.send(form);
   });
 }
