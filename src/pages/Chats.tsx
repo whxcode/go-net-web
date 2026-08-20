@@ -1,40 +1,65 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { get } from '../api/http'
-import { useStore, Friend, Group } from '../store'
-import { useI18n } from '../hooks/useI18n'
-import { MessageCircle, Users } from 'lucide-react'
-import { decodeMessagePayload } from '../utils/messagePayload'
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { get } from "../api/http";
+import { useStore, Friend, Group } from "../store";
+import { useI18n } from "../hooks/useI18n";
+import { MessageCircle, Users } from "lucide-react";
+import { decodeMessagePayload } from "../utils/messagePayload";
 
 export default function Chats() {
-  const { t } = useI18n()
-  const navigate = useNavigate()
-  const friends = useStore(s => s.friends)
-  const groups = useStore(s => s.groups)
-  const setFriends = useStore(s => s.setFriends)
-  const setGroups = useStore(s => s.setGroups)
-  const messages = useStore(s => s.messages)
-  const unread = useStore(s => s.unread)
-  const clearUnread = useStore(s => s.clearUnread)
-  const [search, setSearch] = useState('')
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const friends = useStore((s) => s.friends);
+  const groups = useStore((s) => s.groups);
+  const setFriends = useStore((s) => s.setFriends);
+  const setGroups = useStore((s) => s.setGroups);
+  const messages = useStore((s) => s.messages);
+  const unread = useStore((s) => s.unread);
+  const clearUnread = useStore((s) => s.clearUnread);
+  const [search, setSearch] = useState("");
+
+  const loadContacts = useCallback(() => {
+    // ✅ 获取好友列表
+    get("/api/friend/friends")
+      .then((data) => {
+        // data 是数组 [{ id, userId, friendId, status, remark, ... }]
+        // 映射成 store 需要的 Friend 结构
+        const friends = data.map((item: any) => ({
+          id: String(item.friendId || item.userId),
+          username: String(item.friendId), // 后端没返回，暂时空
+          nickname: String(item.friendId), // 后端没返回，暂时空
+          avatar: "",
+          is_online: false,
+          auto_delete: 0,
+          remark: item.remark || "",
+        }));
+
+        setFriends(friends);
+      })
+      .catch(() => {});
+
+    // 群组接口先保留
+    get("/api/groups")
+      .then(setGroups)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
-    get<Friend[]>('/api/friends').then(setFriends).catch(() => {})
-    get<Group[]>('/api/groups').then(setGroups).catch(() => {})
-  }, [])
+    loadContacts();
+  }, [loadContacts]);
 
   // Build chat list from friends + groups with last message
   const chatList = [
-    ...friends.map(f => ({
+    ...friends.map((f) => ({
       id: f.id,
-      name: f.nickname || f.username,
+      name: f.nickname || f.username || f.id,
       avatar: f.avatar,
       isOnline: f.is_online,
       isGroup: false,
       lastMsg: messages[f.id]?.at(-1),
       unreadCount: unread[f.id] || 0,
     })),
-    ...groups.map(g => ({
+    ...groups.map((g) => ({
       id: g.id,
       name: g.name,
       avatar: g.avatar,
@@ -43,72 +68,97 @@ export default function Chats() {
       lastMsg: messages[g.id]?.at(-1),
       unreadCount: unread[g.id] || 0,
     })),
-  ].filter(c => {
-    if (!search) return true
-    return c.name.toLowerCase().includes(search.toLowerCase())
-  }).sort((a, b) => {
-    const tsA = a.lastMsg?.ts || 0
-    const tsB = b.lastMsg?.ts || 0
-    return tsB - tsA
-  })
+  ]
+    .filter((c) => {
+      if (!search) return true;
+      return c.name.toLowerCase().includes(search.toLowerCase());
+    })
+    .sort((a, b) => {
+      const tsA = a.lastMsg?.ts || 0;
+      const tsB = b.lastMsg?.ts || 0;
+      return tsB - tsA;
+    });
 
   const formatTime = (ts?: number) => {
-    if (!ts) return ''
-    const d = new Date(ts)
-    const now = new Date()
+    if (!ts) return "";
+    const d = new Date(ts);
+    const now = new Date();
     if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  }
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
 
   const getPreview = (msg?: any) => {
-    if (!msg) return ''
+    if (!msg) return "";
     switch (msg.msg_type) {
-      case 'image': return t('chats.image')
-      case 'file': return t('chats.file')
-      case 'voice': return t('chats.voice')
-      case 'video': return t('chats.video')
-      case 'sticker': return t('chats.sticker')
-      default: return decodeMessagePayload(msg.decrypted || msg.ciphertext || '').body.substring(0, 30)
+      case "image":
+        return t("chats.image");
+      case "file":
+        return t("chats.file");
+      case "voice":
+        return t("chats.voice");
+      case "video":
+        return t("chats.video");
+      case "sticker":
+        return t("chats.sticker");
+      default:
+        return decodeMessagePayload(
+          msg.decrypted || msg.ciphertext || "",
+        ).body.substring(0, 30);
     }
-  }
+  };
 
   return (
     <div className="page" id="chats-page">
       <div className="page-header">
-        <h1>{t('chats.title')}</h1>
+        <h1>{t("chats.title")}</h1>
       </div>
 
       <div className="search-bar">
         <input
-          type="text" id="chat-search"
-          placeholder={t('chats.search')}
+          type="text"
+          id="chat-search"
+          placeholder={t("chats.search")}
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
       <div className="page-body">
         {chatList.length === 0 ? (
           <div className="empty-state">
-            <div className="icon"><MessageCircle size={40} strokeWidth={1.5} /></div>
-            <div>{t('chats.empty')}</div>
-            <div style={{ marginTop: 4, fontSize: 13 }}>{t('chats.empty_hint')}</div>
+            <div className="icon">
+              <MessageCircle size={40} strokeWidth={1.5} />
+            </div>
+            <div>{t("chats.empty")}</div>
+            <div style={{ marginTop: 4, fontSize: 13 }}>
+              {t("chats.empty_hint")}
+            </div>
           </div>
         ) : (
-          chatList.map(chat => (
+          chatList.map((chat) => (
             <div
               key={chat.id}
               className="list-item"
               id={`chat-${chat.id}`}
               onClick={() => {
-                clearUnread(chat.id)
-                navigate(chat.isGroup ? `/chat/${chat.id}?group=1` : `/chat/${chat.id}`)
+                clearUnread(chat.id);
+                navigate(
+                  chat.isGroup
+                    ? `/chat/${chat.id}?group=1`
+                    : `/chat/${chat.id}`,
+                );
               }}
             >
-              <div className="avatar" style={{ position: 'relative' }}>
-                {chat.avatar ? <img src={chat.avatar} alt="" /> : (chat.isGroup ? <Users size={20} /> : chat.name[0]?.toUpperCase())}
+              <div className="avatar" style={{ position: "relative" }}>
+                {chat.avatar ? (
+                  <img src={chat.avatar} alt="" />
+                ) : chat.isGroup ? (
+                  <Users size={20} />
+                ) : (
+                  chat.name[0]?.toUpperCase()
+                )}
                 {chat.isOnline && <span className="online-dot" />}
               </div>
               <div className="list-content">
@@ -118,8 +168,8 @@ export default function Chats() {
               <div className="list-meta">
                 <span className="time">{formatTime(chat.lastMsg?.ts)}</span>
                 {chat.unreadCount > 0 && (
-                  <span className="badge" style={{ position: 'static' }}>
-                    {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+                  <span className="badge" style={{ position: "static" }}>
+                    {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
                   </span>
                 )}
               </div>
@@ -128,5 +178,5 @@ export default function Chats() {
         )}
       </div>
     </div>
-  )
+  );
 }

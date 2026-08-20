@@ -64,17 +64,37 @@ export default function Contacts() {
 
   // Friends tab: group by tag toggle
   const [groupByTag, setGroupByTag] = useState(false);
+  console.log({ friends });
 
   const loadContacts = useCallback(() => {
-    get<Friend[]>("/api/friends")
-      .then(setFriends)
+    // ✅ 获取好友列表
+    get("/api/friend/friends")
+      .then((data) => {
+        // data 是数组 [{ id, userId, friendId, status, remark, ... }]
+        // 映射成 store 需要的 Friend 结构
+        const friends = data.map((item: any) => ({
+          id: String(item.friendId || item.userId),
+          username: String(item.friendId), // 后端没返回，暂时空
+          nickname: String(item.friendId), // 后端没返回，暂时空
+          avatar: "",
+          is_online: false,
+          auto_delete: 0,
+          remark: item.remark || "",
+        }));
+        setFriends(friends);
+      })
       .catch(() => {});
+
+    // 群组接口先保留
     get("/api/groups")
       .then(setGroups)
       .catch(() => {});
+
+    // 好友申请接口
     get("/api/friends/requests")
       .then(setRequests)
       .catch(() => {});
+
     loadTagData();
   }, []);
 
@@ -480,7 +500,11 @@ export default function Contacts() {
   // MAIN VIEW
   // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="page" id="contacts-page">
+    <div
+      style={{ border: "1px solid red" }}
+      className="page"
+      id="contacts-page"
+    >
       <div className="page-header">
         <h1>{t("contacts.title")}</h1>
         <button
