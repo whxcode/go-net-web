@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { get, post, put, del, normalizeFileUrl } from '../api/http'
 import { useStore } from '../store'
 import { useI18n } from '../hooks/useI18n'
-import { deriveSafetyNumber } from '../crypto/safetyNumber'
-import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Film, Fingerprint, Lock, MessageCircle, Pencil, Phone, ShieldCheck, Flag, Ban } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight, Film, Lock, MessageCircle, Pencil, Phone, Flag, Ban } from 'lucide-react'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
@@ -29,10 +28,6 @@ export default function UserProfile() {
   // Latest moments
   const [moments, setMoments] = useState<any[]>([])
 
-  // Safety number
-  const [safetyNumber, setSafetyNumber] = useState('')
-  const [showSafetyNumber, setShowSafetyNumber] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   // Report
   const [showReport, setShowReport] = useState(false)
@@ -68,34 +63,6 @@ export default function UserProfile() {
     setLoading(false)
   }, [id])
 
-  // Compute the number from both public keys as published by the server. Using
-  // a local key on one side and a published key on the other made the two views
-  // disagree whenever a restored long-lived session had stale local key state.
-  useEffect(() => {
-    if (!user?.ik_pub) return
-    let cancelled = false
-    get('/api/users/me')
-      .then((currentUser: any) => {
-        if (!cancelled && currentUser?.ik_pub) computeSafetyNumber(currentUser.ik_pub, user.ik_pub)
-      })
-      .catch(() => { if (!cancelled) setSafetyNumber('—') })
-    return () => { cancelled = true }
-  }, [user?.ik_pub])
-
-  const computeSafetyNumber = async (myIkPub: string, theirIkPub: string) => {
-    try {
-      setSafetyNumber(await deriveSafetyNumber(myIkPub, theirIkPub))
-    } catch {
-      setSafetyNumber('—')
-    }
-  }
-
-  const handleCopySafety = () => {
-    navigator.clipboard.writeText(safetyNumber).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
 
   // Update remark from friend data
   useEffect(() => {
@@ -300,82 +267,6 @@ export default function UserProfile() {
             }} />
           </div>
         </div>
-
-        {/* Safety Number — E2E verification */}
-        <div className="section-title" style={{ padding: '16px 16px 6px' }}>
-          <ShieldCheck size={14} /> {t('safety.title')}
-        </div>
-        <div
-          className="settings-item"
-          onClick={() => setShowSafetyNumber(!showSafetyNumber)}
-          style={{ cursor: 'pointer' }}
-        >
-          <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Fingerprint size={14} />
-            {t('safety.verify_encryption')}
-          </span>
-          <span className="arrow">{showSafetyNumber ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-        </div>
-
-        {showSafetyNumber && safetyNumber && (
-          <div style={{
-            margin: '0 12px 8px', padding: 20, borderRadius: 16,
-            background: 'var(--bg-card)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
-          }}>
-            <div style={{
-              fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5,
-            }}>
-              {t('safety.description')}
-            </div>
-
-            {/* Safety number grid */}
-            <div style={{
-              background: 'var(--bg-primary)',
-              borderRadius: 12, padding: '16px 20px',
-              width: '100%', maxWidth: 300,
-            }}>
-              <div style={{
-                fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", monospace',
-                fontSize: 18, lineHeight: 2.2,
-                textAlign: 'center', letterSpacing: 2,
-                color: 'var(--text-primary)',
-              }}>
-                {(() => {
-                  const nums = safetyNumber.split(' ')
-                  const rows: string[][] = []
-                  for (let i = 0; i < nums.length; i += 4) rows.push(nums.slice(i, i + 4))
-                  return rows.map((row, i) => <div key={i}>{row.join('  ')}</div>)
-                })()}
-              </div>
-            </div>
-
-            {/* Participants */}
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-              {me?.nickname} ↔ {displayName}
-            </div>
-
-            {/* Copy button */}
-            <button
-              className="btn btn-sm btn-secondary"
-              onClick={(e) => { e.stopPropagation(); handleCopySafety() }}
-              style={{ minWidth: 140 }}
-            >
-              {copied ? <><Check size={12} /> {t('fingerprint.copied')}</> : <><Copy size={12} /> {t('fingerprint.copy')}</>}
-            </button>
-
-            {/* How to verify */}
-            <div style={{
-              fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6,
-              background: 'var(--bg-primary)', borderRadius: 10, padding: 12, width: '100%',
-            }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
-                {t('safety.how_to_verify')}
-              </div>
-              {t('safety.verify_steps')}
-            </div>
-          </div>
-        )}
 
         {/* Latest moments */}
         <div className="section-title" style={{ padding: '16px 16px 6px' }}>

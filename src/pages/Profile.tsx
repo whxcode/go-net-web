@@ -2,8 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, ProxyConfig } from '../store'
 import { useI18n } from '../hooks/useI18n'
-import { clearKeys, getKeys } from '../crypto/keystore'
-import { clearAllSenderKeys } from '../crypto/groupCrypto'
 import { disconnectWs } from '../api/socket'
 import { get, post, put, del, uploadFile } from '../api/http'
 import { allLangs, langNames, LangCode } from '../i18n'
@@ -12,10 +10,8 @@ import { isPushSupported, isPushSubscribed, subscribePush, unsubscribePush } fro
 import { logoutOneSignal } from '../api/onesignal'
 import { Camera, ChevronLeft, ChevronRight, Smartphone, Check, Copy, KeyRound, Shield, Fingerprint, Moon, Globe, Bell, Download as DownloadIcon, Monitor, CheckCircle, FileText, ExternalLink, Wifi, Trash2, AlertTriangle } from 'lucide-react'
 import { clearOfflineCache } from '../utils/offlineCache'
-import { PRESENTATION_CODECS, type PresentationCodecId } from '../crypto/presentationCodec'
-import { disablePresentationCrypto, enablePresentationCrypto, getPresentationSettings, isPresentationUnlocked, lockPresentationCrypto, unlockPresentationCrypto, updatePresentationSettings } from '../crypto/presentationCrypto'
 
-type SubView = null | 'password' | 'avatar' | '2fa' | 'sessions' | 'language' | 'fingerprint' | 'myqr' | 'proxy' | 'message-privacy'
+type SubView = null | 'password' | 'avatar' | '2fa' | 'sessions' | 'language' | 'myqr' | 'proxy'
 const APP_VERSION = '2.4.7'
 
 export default function Profile() {
@@ -103,11 +99,6 @@ export default function Profile() {
       if (payload?.session_id) await del(`/api/sessions/${payload.session_id}`)
     } catch { /* best effort */ }
     disconnectWs()
-    // Preserve identity keys (ik_pub/ik_priv) across logout/login cycles.
-    // Clearing them would force ensureKeysExist() to generate a new keypair,
-    // breaking sender key distributions for all group members.
-    // Only clear sender key cache (it will be re-fetched on next login).
-    clearAllSenderKeys()
     logoutOneSignal()
     logout()
     navigate('/login')
@@ -141,7 +132,6 @@ export default function Profile() {
     try {
       await post('/api/users/delete', { password: deletePassword })
       disconnectWs()
-      clearKeys()
       logoutOneSignal()
       logout()
       navigate('/login')
@@ -157,10 +147,8 @@ export default function Profile() {
   if (subView === '2fa') return <TwoFactorAuth onBack={() => setSubView(null)} t={t} />
   if (subView === 'sessions') return <Sessions onBack={() => setSubView(null)} t={t} />
   if (subView === 'language') return <LanguagePicker onBack={() => setSubView(null)} t={t} lang={lang} setLang={setLang} />
-  if (subView === 'fingerprint') return <KeyFingerprint onBack={() => setSubView(null)} t={t} user={user} />
   if (subView === 'myqr') return <MyQRCode onBack={() => setSubView(null)} t={t} user={user} />
   if (subView === 'proxy') return <ProxySettings onBack={() => setSubView(null)} t={t} />
-  if (subView === 'message-privacy') return <MessagePrivacySettings onBack={() => setSubView(null)} t={t} />
 
   return (
     <div className="page" id="profile-page">
@@ -201,14 +189,6 @@ export default function Profile() {
         </div>
         <div className="settings-item" onClick={() => setSubView('sessions')}>
           <span className="label"><Smartphone size={16} /> {t('profile.sessions')}</span>
-          <span className="arrow"><ChevronRight size={14} /></span>
-        </div>
-        <div className="settings-item" onClick={() => setSubView('fingerprint')}>
-          <span className="label"><Fingerprint size={16} /> {t('fingerprint.title')}</span>
-          <span className="arrow"><ChevronRight size={14} /></span>
-        </div>
-        <div className="settings-item" onClick={() => setSubView('message-privacy')}>
-          <span className="label"><Shield size={16} /> {t('profile.message_privacy')}</span>
           <span className="arrow"><ChevronRight size={14} /></span>
         </div>
 
@@ -429,66 +409,6 @@ export default function Profile() {
       </div>
     </div>
   )
-}
-
-function MessagePrivacySettings({ onBack, t }: { onBack: () => void; t: (k: string) => string }) {
-  const [settings, setSettings] = useState(getPresentationSettings)
-  const refresh = () => setSettings(getPresentationSettings())
-  useEffect(() => {
-    window.addEventListener('paperphone:presentation-state-changed', refresh)
-    return () => window.removeEventListener('paperphone:presentation-state-changed', refresh)
-  }, [])
-  const toggleLock = async () => {
-    if (settings.enabled && isPresentationUnlocked()) { lockPresentationCrypto(); return }
-    const pass = prompt(t(settings.enabled ? 'chat.presentation_unlock_password_prompt' : 'chat.presentation_password_prompt')) || ''
-    if (!pass) return
-    try {
-      if (settings.enabled) {
-        if (!(await unlockPresentationCrypto(pass))) alert(t('chat.presentation_wrong_password'))
-      } else {
-        const confirmation = prompt(t('chat.presentation_password_confirm')) || ''
-        if (pass !== confirmation) { alert(t('password.mismatch')); return }
-        await enablePresentationCrypto(settings.codec, pass)
-      }
-      refresh()
-    } catch (err: any) { alert(err?.message || t('common.error')) }
-  }
-  const disableEncryption = async () => {
-    const pass = prompt(t('chat.presentation_disable_password_prompt')) || ''
-    if (!pass) return
-    try {
-      if (!(await disablePresentationCrypto(pass))) {
-        alert(t('chat.presentation_wrong_password'))
-        return
-      }
-      refresh()
-    } catch (err: any) { alert(err?.message || t('common.error')) }
-  }
-  return <div className="page">
-    <div className="page-header"><button className="back-btn" onClick={onBack}><ChevronLeft size={20} /></button><h1>{t('profile.message_privacy')}</h1></div>
-    <div className="page-body">
-      <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>{t('profile.message_privacy_desc')}</div>
-      <div className="settings-item">
-        <span className="label">{t('chat.presentation_codec')}</span>
-        <select value={settings.codec} disabled={settings.enabled} onChange={e => { updatePresentationSettings({ codec: e.target.value as PresentationCodecId }); refresh() }}
-          style={{ maxWidth: 170, padding: 6, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-          {PRESENTATION_CODECS.map(codec => <option key={codec.id} value={codec.id}>{t(`presentation.codec_${codec.id}`)}</option>)}
-        </select>
-      </div>
-      <div className="settings-item" onClick={toggleLock} style={{ cursor: 'pointer' }}>
-        <span className="label">{settings.enabled ? (isPresentationUnlocked() ? t('chat.presentation_lock_now') : t('chat.presentation_unlock')) : t('chat.presentation_enable')}</span>
-        <span style={{ color: isPresentationUnlocked() ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600 }}>{settings.enabled ? (isPresentationUnlocked() ? t('chat.presentation_unlocked') : t('chat.presentation_locked')) : 'OFF'}</span>
-      </div>
-      {settings.enabled && <>
-        <div className="settings-item"><span className="label">{t('chat.presentation_auto_lock')}</span>
-          <select value={settings.lockMinutes} onChange={e => { updatePresentationSettings({ lockMinutes: Number(e.target.value) as 5 | 15 | 30 | 60 }); refresh() }}
-            style={{ padding: 6, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-            {[5, 15, 30, 60].map(minutes => <option key={minutes} value={minutes}>{minutes === 60 ? t('chat.presentation_1_hour') : `${minutes} ${t('chat.presentation_minutes')}`}</option>)}</select>
-        </div>
-        <div className="settings-item" onClick={disableEncryption} style={{ cursor: 'pointer', color: 'var(--danger)' }}><span className="label">{t('chat.presentation_disable')}</span></div>
-      </>}
-    </div>
-  </div>
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -892,134 +812,6 @@ function LanguagePicker({ onBack, t, lang, setLang }: { onBack: () => void; t: (
             </div>
           )
         })}
-      </div>
-    </div>
-  )
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   SUB-VIEW: Key Fingerprint
-   ═══════════════════════════════════════════════════════════════════════════ */
-function KeyFingerprint({ onBack, t, user }: { onBack: () => void; t: (k: string) => string; user: any }) {
-  const [fingerprint, setFingerprint] = useState('')
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    computeFingerprint()
-  }, [])
-
-  const computeFingerprint = async () => {
-    // Use ik_pub from both keystore (local) and user store (server)
-    const keys = getKeys()
-    const ikPub = keys?.ik_pub || user?.ik_pub
-    if (!ikPub) {
-      setFingerprint('—')
-      return
-    }
-
-    try {
-      // Decode base64 to bytes
-      const raw = atob(ikPub.replace(/-/g, '+').replace(/_/g, '/'))
-      const bytes = new Uint8Array(raw.length)
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
-
-      // SHA-256 hash
-      const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
-      const hashArray = new Uint8Array(hashBuffer)
-
-      // Format as hex blocks: "AB12 CD34 EF56 ..."
-      const hex = Array.from(hashArray)
-        .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
-        .join('')
-
-      // Group into blocks of 4 chars (2 bytes each)
-      const blocks = hex.match(/.{1,4}/g) || []
-      setFingerprint(blocks.join(' '))
-    } catch {
-      setFingerprint('—')
-    }
-  }
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(fingerprint).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
-  // Split fingerprint into rows of 4 blocks for display
-  const blocks = fingerprint.split(' ')
-  const rows: string[][] = []
-  for (let i = 0; i < blocks.length; i += 4) {
-    rows.push(blocks.slice(i, i + 4))
-  }
-
-  return (
-    <div className="page">
-      <div className="page-header">
-        <button className="back-btn" onClick={onBack}><ChevronLeft size={20} /></button>
-        <h1>{t('fingerprint.my_key_title')}</h1>
-      </div>
-      <div className="page-body" style={{ padding: 16 }}>
-        <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--accent)' }}><Fingerprint size={48} /></div>
-          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
-            {t('fingerprint.my_key_subtitle')}
-          </div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24, lineHeight: 1.5 }}>
-            {t('fingerprint.my_key_desc')}
-          </div>
-        </div>
-
-        {/* Fingerprint display */}
-        <div style={{
-          background: 'var(--bg-card)',
-          borderRadius: 16,
-          padding: '20px 16px',
-          margin: '0 auto',
-          maxWidth: 340,
-        }}>
-          <div style={{
-            fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", monospace',
-            fontSize: 16,
-            lineHeight: 2,
-            textAlign: 'center',
-            letterSpacing: 1,
-            color: 'var(--text-primary)',
-          }}>
-            {rows.map((row, i) => (
-              <div key={i}>{row.join('  ')}</div>
-            ))}
-          </div>
-        </div>
-
-        {/* User info */}
-        <div style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: 'var(--text-muted)' }}>
-          @{user?.username}
-        </div>
-
-        {/* Copy button */}
-        <div style={{ textAlign: 'center', marginTop: 24 }}>
-          <button className="btn btn-primary" onClick={handleCopy} style={{ minWidth: 180 }}>
-            {copied ? <><Check size={14} /> {t('fingerprint.copied')}</> : <><Copy size={14} /> {t('fingerprint.copy')}</>}
-          </button>
-        </div>
-
-        {/* How to verify */}
-        <div style={{
-          marginTop: 32,
-          padding: 16,
-          background: 'var(--bg-card)',
-          borderRadius: 12,
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          lineHeight: 1.6,
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>
-            {t('safety.how_to_verify')}
-          </div>
-          {t('fingerprint.my_key_verify_hint')}
-        </div>
       </div>
     </div>
   )

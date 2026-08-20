@@ -25,7 +25,11 @@ function persistMessages(messages: Record<string, ChatMessage[]>) {
       // Keep a deep offline history for every conversation.
       const trimmed: Record<string, ChatMessage[]> = { _v: MSG_CACHE_VERSION } as any
       for (const [chatId, msgs] of Object.entries(messages)) {
-        trimmed[chatId] = msgs.slice(-2000).map(({ decrypted: _plaintext, ...stored }) => stored as ChatMessage)
+        trimmed[chatId] = msgs.slice(-2000).map(({ decrypted, ...stored }) => {
+          // 明文模式（消息无 ciphertext）持久化时保留明文，否则刷新后消息无法显示
+          if (!stored.ciphertext && typeof decrypted === 'string') (stored as any).decrypted = decrypted
+          return stored as ChatMessage
+        })
       }
       localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(trimmed))
       void cacheMediaIn(trimmed)

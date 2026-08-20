@@ -1,17 +1,13 @@
 import { useStore } from '../store'
-import { ensureRefreshToken, refreshAccessToken } from './http'
 
 type MessageHandler = (data: any) => void | Promise<void>
 
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
-let authTimer: ReturnType<typeof setTimeout> | null = null
 let ready = false
 let lastPongAt = 0
 let reconnectAttempt = 0
-let upgradingLegacySession = false
-let legacyUpgradeAttemptAt = 0
 const handlers = new Map<string, Set<MessageHandler>>()
 
 function outboxKey() { return `pp_outbox:${useStore.getState().user?.id || 'unknown'}` }
@@ -49,71 +45,89 @@ function enqueueSequenced(fn: () => Promise<void>) {
   return _eventQueue
 }
 
+// ── 后端明文协议 (Go) ──────────────────────────────────────────
+// 服务端消息: {type:0, id, msgId, senderId, receiverId, elements:[{type:0|1|2|3, content, url, name, size, ...}], status, createdAt}
+// 客户端心跳: {type:1} / 服务端心跳回复: {type:2}
+const ELEMENT_TYPE_TO_MSG_TYPE: Record<number, string> = { 0: 'text', 1: 'image', 2: 'video', 3: 'file' }
+
+export function convertServerMessage(m: any) {
+  const el = Array.isArray(m.elements) ? m.elements[0] : null
+  const elType = typeof el?.type === 'number' ? el.type : 0
+  const msgType = ELEMENT_TYPE_TO_MSG_TYPE[elType] || 'text'
+  const rawId = String(m.msgId || m.id || '')
+  const ts = m.createdAt ? Date.parse(m.createdAt) || Date.now() : Date.now()
+  return {
+    // 后端推送若未携带 msgId/createdAt：用 发送者-接收者-时间 兜底，保证有 id 可去重
+    id: rawId || `${m.senderId}-${m.receiverId}-${ts}`,
+    from: String(m.senderId ?? ''),
+    to: String(m.receiverId ?? ''),
+    msg_type: msgType,
+    // 明文内容：文本走 content，媒体走 url（图片/文件后续支持时用）
+    decrypted: elType === 0 ? (el.content ?? '') : (el?.url ?? ''),
+    url: el?.url ?? '',
+    name: el?.name ?? '',
+    size: el?.size ?? 0,
+    width: el?.width ?? 0,
+    height: el?.height ?? 0,
+    hash: el?.hash ?? '',
+    ts,
+    delivery_status: 'sent',
+  }
+}
+
 function getWsUrl(): string {
   const custom = import.meta.env.VITE_WS_URL
   if (custom) return custom
 
-  // Derive from user-configured serverUrl or VITE_API_URL
-  const apiUrl = localStorage.getItem('serverUrl') || import.meta.env.VITE_API_URL
-  if (apiUrl) {
-    const url = apiUrl.replace(/\/$/, '') // trim trailing slash
-    const wsUrl = url.replace(/^http/, 'ws') // http→ws, https→wss
-    return `${wsUrl}/ws`
-  }
-
-  // Fallback: same host (frontend and backend co-located)
+  const userId = useStore.getState().user?.id
+  // 后端明文协议：/api/ws/im?userID=<id>，无鉴权
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/ws`
+  return `${proto}//${location.host}/api/ws/im?userID=${encodeURIComponent(userId || '')}`
 }
 
 export function connectWs() {
   const token = useStore.getState().token
   if (!token || ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
-  if (!localStorage.getItem('refreshToken') && !upgradingLegacySession && Date.now() - legacyUpgradeAttemptAt > 60000) {
-    legacyUpgradeAttemptAt = Date.now()
-    upgradingLegacySession = true
-    void ensureRefreshToken().finally(() => { upgradingLegacySession = false; connectWs() })
-    return
-  }
 
   const socket = new WebSocket(getWsUrl())
   ws = socket
 
   socket.onopen = () => {
-    // Authenticate
-    socket.send(JSON.stringify({ type: 'auth', token }))
-    authTimer = setTimeout(() => socket.close(), 10000)
+    // 后端无鉴权，连接即就绪
+    ready = true
+    lastPongAt = Date.now()
+    reconnectAttempt = 0
+    useStore.getState().setWsConnected(true)
+    flushOutbox(socket)
+    heartbeatTimer = setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastPongAt > 70000) {
+        socket.close(4000, 'heartbeat timeout')
+        return
+      }
+      // 心跳 type:1
+      socket.send(JSON.stringify({ type: 1 }))
+    }, 25000)
   }
 
   socket.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data)
-      const type = data.type as string
+      const type = data?.type
 
-      if (type === 'auth_ok') {
-        if (authTimer) clearTimeout(authTimer)
-        authTimer = null
-        ready = true
+      // 心跳回复 type:2
+      if (type === 2) {
         lastPongAt = Date.now()
-        reconnectAttempt = 0
-        useStore.getState().setWsConnected(true)
-        flushOutbox(socket)
-        heartbeatTimer = setInterval(() => {
-          if (socket.readyState !== WebSocket.OPEN) return
-          if (Date.now() - lastPongAt > 70000) {
-            socket.close(4000, 'heartbeat timeout')
-            return
-          }
-          socket.send(JSON.stringify({ type: 'ping', id: Date.now() }))
-        }, 25000)
-      } else if (type === 'pong') {
-        lastPongAt = Date.now()
-      } else if (type === 'auth_error' && data.refreshable) {
-        void refreshAccessToken().finally(() => socket.close())
+        return
       }
-      if (type === 'ack') acknowledgeOutbound(data.client_msg_id)
 
-      dispatchIncoming(data)
+      // 普通消息 type:0 → 转成前端 ChatMessage 结构派发
+      if (type === 0) {
+        dispatchIncoming({ type: 'message', ...convertServerMessage(data) })
+        return
+      }
+
+      // 其他未知类型忽略
     } catch { /* ignore parse errors */ }
   }
 
@@ -156,8 +170,6 @@ export function disconnectWs() {
 function cleanup() {
   if (heartbeatTimer) clearInterval(heartbeatTimer)
   heartbeatTimer = null
-  if (authTimer) clearTimeout(authTimer)
-  authTimer = null
   ready = false
   useStore.getState().setWsConnected(false)
 }
@@ -184,6 +196,11 @@ export function forceReconnect() {
 }
 
 export function sendWs(data: any): boolean {
+  // 后端 type 是 uint：字符串 type 会导致服务端 JSON 解析失败断开连接，直接丢弃
+  if (data && typeof data.type === 'string') {
+    console.warn('[WS] dropped non-numeric type message:', data.type)
+    return false
+  }
   if (data?.type === 'message') {
     data.client_msg_id ||= crypto.randomUUID()
     queueOutbound(data)
