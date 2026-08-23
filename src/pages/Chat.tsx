@@ -527,7 +527,7 @@ export default function Chat() {
   }
 
   // ── Upload helper with progress ──
-  const uploadWithProgress = async (file: File, label: string): Promise<{ url: string }> => {
+  const uploadWithProgress = async (file: File, label: string): Promise<{ hash: string; url: string; filename: string; size: number }> => {
     setUploadProgress(0)
     setUploadLabel(label)
     try {
@@ -556,28 +556,28 @@ export default function Chat() {
     const path = isGroup ? `/api/messages/group/${id}?limit=50000` : `/api/messages/private/${id}?limit=50000`
 
     const loadMessages = async () => {
-      // 后端暂无历史消息接口：失败时仅保留本地缓存 + WS 实时消息
-      const msgs = await get(path).catch(() => null)
+      // 后端历史消息接口：GET /api/messages/private/:friendId?limit=&offset=
+      // 返回 data: { data: [Message...], size, total }（兼容直接返回数组）
+      const raw = await get<any>(path).catch(() => null)
+      const msgs = Array.isArray(raw) ? raw : (raw?.data ?? [])
       if (!Array.isArray(msgs)) {
         const cached = useStore.getState().messages[id] || []
         setMessages(id, cached)
         return
       }
 
-      // Client-side defense: filter out expired messages based on auto_delete
-      const autoDeleteSec = isGroup ? (group?.auto_delete ?? 0) : (friend?.auto_delete ?? 0)
-      let filtered = msgs
-      if (autoDeleteSec > 0) {
-        const cutoff = Date.now() - autoDeleteSec * 1000
-        filtered = msgs.filter(m => m.ts > cutoff)
-      }
-
-      // 明文模式：服务端消息内容直接在 decrypted / ciphertext 字段，无需解密。
-      // 历史接口返回后端 Message 结构（含 elements）时复用 WS 转换层统一映射
-      const serverMessages = filtered.map((m: any) => {
+      // 明文模式：后端 Message 结构（含 elements）→ 复用 WS 转换层统一映射
+      let serverMessages = msgs.map((m: any) => {
         const converted = m.elements ? convertServerMessage(m) : m
         return { ...converted, decrypted: converted.decrypted || converted.ciphertext || '' }
       })
+
+      // Client-side defense: filter out expired messages based on auto_delete（转换后才有 ts）
+      const autoDeleteSec = isGroup ? (group?.auto_delete ?? 0) : (friend?.auto_delete ?? 0)
+      if (autoDeleteSec > 0) {
+        const cutoff = Date.now() - autoDeleteSec * 1000
+        serverMessages = serverMessages.filter(m => m.ts > cutoff)
+      }
 
       // Merge: use server messages as base, append any local-only messages
       // (messages received via WebSocket that aren't in the server response yet)
@@ -663,11 +663,22 @@ export default function Chat() {
 
       let sent = false
       // 明文私聊：按后端协议发送 {type:0, senderId, receiverId, elements}
+      // elements[].type: 0文本 1图片 2视频 3文件（媒体消息传 hash）
+      const EL_TYPE: Record<string, number> = { text: 0, image: 1, video: 2, file: 3 }
+      const element: any = { type: EL_TYPE[msgType] ?? 0, content: displayWireContent }
+      if (msgType !== 'text' && _extra?.hash) {
+        element.hash = _extra.hash
+        if (_extra.fileName) element.name = _extra.fileName
+        if (_extra.fileSize) element.size = _extra.fileSize
+        if (_extra.fileType) element.file_type = _extra.fileType
+        if (_extra.width) element.width = _extra.width
+        if (_extra.height) element.height = _extra.height
+      }
       sent = sendWs({
         type: 0,
         senderId: Number(user.id),
         receiverId: Number(id),
-        elements: [{ type: 0, content: displayWireContent }],
+        elements: [element],
       })
 
       if (!sent) {
@@ -703,8 +714,8 @@ export default function Chat() {
     for (let index = 0; index < files.length; index++) {
       try {
         const label = `${t('chat.uploading_image')} (${index + 1}/${files.length})`
-        const { url } = await uploadWithProgress(files[index], label)
-        sendMessage(url, 'image', { url })
+        const res = await uploadWithProgress(files[index], label)
+        sendMessage(res.url, 'image', { url: res.url, hash: res.hash, fileName: res.filename, fileSize: res.size })
       } catch {
         failed = true
       }
@@ -718,9 +729,9 @@ export default function Chat() {
     e.target.value = ''
     setShowAttachPanel(false)
     try {
-      const { url } = await uploadWithProgress(file, t('chat.uploading_video'))
-      const meta = JSON.stringify({ url, fileName: file.name, fileSize: file.size, fileType: file.type })
-      sendMessage(meta, 'video', { url })
+      const res = await uploadWithProgress(file, t('chat.uploading_video'))
+      const meta = JSON.stringify({ url: res.url, fileName: file.name, fileSize: file.size, fileType: file.type })
+      sendMessage(meta, 'video', { url: res.url, hash: res.hash, fileName: file.name, fileSize: file.size, fileType: file.type })
     } catch {
       alert(t('chat.upload_failed'))
     }
@@ -732,9 +743,9 @@ export default function Chat() {
     e.target.value = ''
     setShowAttachPanel(false)
     try {
-      const { url } = await uploadWithProgress(file, t('chat.uploading_file'))
-      const meta = JSON.stringify({ url, fileName: file.name, fileSize: file.size, fileType: file.type })
-      sendMessage(meta, 'file', { url, fileName: file.name, fileSize: file.size, fileType: file.type })
+      const res = await uploadWithProgress(file, t('chat.uploading_file'))
+      const meta = JSON.stringify({ url: res.url, fileName: file.name, fileSize: file.size, fileType: file.type })
+      sendMessage(meta, 'file', { url: res.url, hash: res.hash, fileName: file.name, fileSize: file.size, fileType: file.type })
     } catch {
       alert(t('chat.upload_failed'))
     }

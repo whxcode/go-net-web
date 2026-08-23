@@ -56,15 +56,17 @@ export function convertServerMessage(m: any) {
   const msgType = ELEMENT_TYPE_TO_MSG_TYPE[elType] || 'text'
   const rawId = String(m.msgId || m.id || '')
   const ts = m.createdAt ? Date.parse(m.createdAt) || Date.now() : Date.now()
+  // 媒体消息：后端传 hash，前端拼预览接口地址
+  const mediaUrl = el?.url || (el?.hash ? `/api/file/${el.hash}` : '')
   return {
     // 后端推送若未携带 msgId/createdAt：用 发送者-接收者-时间 兜底，保证有 id 可去重
     id: rawId || `${m.senderId}-${m.receiverId}-${ts}`,
     from: String(m.senderId ?? ''),
     to: String(m.receiverId ?? ''),
     msg_type: msgType,
-    // 明文内容：文本走 content，媒体走 url（图片/文件后续支持时用）
-    decrypted: elType === 0 ? (el.content ?? '') : (el?.url ?? ''),
-    url: el?.url ?? '',
+    // 明文内容：文本走 content，媒体走 url（hash 拼接预览接口）
+    decrypted: elType === 0 ? (el.content ?? '') : mediaUrl,
+    url: mediaUrl,
     name: el?.name ?? '',
     size: el?.size ?? 0,
     width: el?.width ?? 0,

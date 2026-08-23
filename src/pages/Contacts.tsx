@@ -207,6 +207,21 @@ export default function Contacts() {
     }
   };
 
+  // 再次申请：重新调 request 接口，后端会把 status 更新回 0，并修改 remark
+  const resendRequest = async (r: any) => {
+    const remark = prompt(t("contacts.request_remark_prompt"), r.remark || "") || "";
+    try {
+      await post("/api/friends/request", {
+        friendID: Number(r.friendId),
+        remark,
+      });
+      const list = await get("/api/friends/requests");
+      setRequests(list);
+    } catch (err: any) {
+      alert(err.message || t("common.error"));
+    }
+  };
+
   const createGroup = async () => {
     if (!newGroupName.trim()) return;
     try {
@@ -959,6 +974,11 @@ export default function Contacts() {
             // friendId = 当前用户 → 别人向我发起的申请（可同意/拒绝）
             // userId = 当前用户 → 我发起的申请（只能等对方处理）
             const isIncoming = String(r.friendId) === String(user?.id)
+            const status = Number(r.status)
+            // status: 0=待处理 1=已同意 2=已拒绝
+            const isPending = status === 0
+            const isRejected = status === 2
+            const isAccepted = status === 1
             return (
               <div key={r.id} className="list-item">
                 <div className="avatar">
@@ -971,8 +991,14 @@ export default function Contacts() {
                 <div className="list-content">
                   <div className="name">{r.nickname}</div>
                   {r.remark && <div className="preview">{r.remark}</div>}
+                  {isRejected && (
+                    <div className="preview" style={{ color: "var(--danger)" }}>
+                      {isIncoming ? t("contacts.rejected") : t("contacts.rejected_by_them")}
+                    </div>
+                  )}
+                  {isAccepted && <div className="preview">{t("contacts.accepted")}</div>}
                 </div>
-                {isIncoming ? (
+                {isIncoming && isPending && (
                   <>
                     <button
                       className="btn btn-sm btn-primary"
@@ -987,8 +1013,20 @@ export default function Contacts() {
                       {t("contacts.reject")}
                     </button>
                   </>
-                ) : (
+                )}
+                {isIncoming && isAccepted && (
+                  <span className="preview">{t("contacts.accepted")}</span>
+                )}
+                {!isIncoming && isPending && (
                   <span className="preview">{t("contacts.pending")}</span>
+                )}
+                {!isIncoming && isRejected && (
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => resendRequest(r)}
+                  >
+                    {t("contacts.request_again")}
+                  </button>
                 )}
               </div>
             )
