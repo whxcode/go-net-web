@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get, post, del, uploadFile as httpUploadFile, normalizeFileUrl } from '../api/http'
+import { fetchFriends } from '../api/friends'
 import { useStore, Friend } from '../store'
 import { useI18n } from '../hooks/useI18n'
 import { Camera, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Heart, ImageIcon, MessageCircle, Plus, Tag, X, Check, Globe, Users, Flag } from 'lucide-react'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
+import { avatarUrl } from '../utils/avatar'
 
 const MAX_IMAGES = 9
 const MAX_TEXT = 1024
@@ -71,7 +73,7 @@ export default function Moments() {
 
   useEffect(() => {
     get('/api/moments').then(data => { setMoments(data); writeOfflineData('moments', data); setLoading(false) }).catch(() => setLoading(false))
-    get<Friend[]>('/api/friends').then(f => useStore.getState().setFriends(f)).catch(() => {})
+    fetchFriends().then(f => useStore.getState().setFriends(f)).catch(() => {})
   }, [])
 
   const refresh = async () => {
@@ -152,7 +154,7 @@ export default function Moments() {
             <div key={m.id} className={`moment-card${imgCount === 0 && (!m.videos || m.videos.length === 0) ? ' text-only' : ''}`}>
               <div className="moment-header">
                 <div className="avatar avatar-sm">
-                  {m.user?.avatar ? <img src={m.user.avatar} alt="" /> : m.user?.nickname?.[0]}
+                  {m.user?.avatar ? <img src={avatarUrl(m.user.avatar)} alt="" /> : m.user?.nickname?.[0]}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div className="moment-user">{m.user?.nickname}</div>
@@ -220,7 +222,7 @@ export default function Moments() {
                       border: '1.5px solid var(--border)',
                     }}>
                       {l.avatar
-                        ? <img src={l.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ? <img src={avatarUrl(l.avatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : l.nickname?.[0]?.toUpperCase()
                       }
                     </div>

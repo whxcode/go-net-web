@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { get, post, put, del, normalizeFileUrl } from '../api/http'
+import { fetchFriends } from '../api/friends'
 import { useStore } from '../store'
 import { useI18n } from '../hooks/useI18n'
-import { Camera, ChevronLeft, ChevronRight, Film, Lock, MessageCircle, Pencil, Phone, Flag, Ban } from 'lucide-react'
+import { avatarUrl } from '../utils/avatar'
+import { Camera, ChevronLeft, ChevronRight, Film, Lock, MessageCircle, Pencil, Phone, Flag, Ban, UserX } from 'lucide-react'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
@@ -90,7 +92,7 @@ export default function UserProfile() {
       setRemark(val || '')
       setEditingRemark(false)
       // Refresh friends list
-      const f = await get('/api/friends')
+      const f = await fetchFriends()
       useStore.getState().setFriends(f)
     } catch {}
   }
@@ -158,6 +160,23 @@ export default function UserProfile() {
     }
   }
 
+  const handleRemoveFriend = async () => {
+    if (!confirm(t('friend.remove_confirm') || '\u786e\u5b9a\u5220\u9664\u8be5\u597d\u53cb\u5417\uff1f')) return
+    const recordId = friend?.record_id
+    if (!recordId) {
+      alert(t('common.error'))
+      return
+    }
+    try {
+      // \u540e\u7aef PUT /friends/{id} status: 3 = \u5220\u9664\u597d\u53cb
+      await put(`/api/friends/${recordId}`, { status: 3 })
+      useStore.getState().setFriends(useStore.getState().friends.filter(f => f.id !== id))
+      navigate(-1)
+    } catch (err: any) {
+      alert(err?.message || t('common.error'))
+    }
+  }
+
   return (
     <div className="page" id="user-profile-page">
       <div className="page-header">
@@ -173,7 +192,7 @@ export default function UserProfile() {
           borderRadius: 16, margin: '8px 12px',
         }}>
           <div className="avatar avatar-lg" style={{ marginBottom: 12 }}>
-            {user.avatar ? <img src={user.avatar} alt="" /> : user.nickname?.[0]?.toUpperCase()}
+            {user.avatar ? <img src={avatarUrl(user.avatar)} alt="" /> : user.nickname?.[0]?.toUpperCase()}
           </div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{displayName}</div>
           {remark && (
@@ -351,6 +370,11 @@ export default function UserProfile() {
         <div className="settings-item" onClick={isBlocked ? handleUnblock : handleBlock} style={{ cursor: 'pointer' }}>
           <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 6, color: isBlocked ? 'var(--accent)' : '#ef4444' }}>
             <Ban size={14} /> {isBlocked ? t('unblock.user') : t('block.user')}
+          </span>
+        </div>
+        <div className="settings-item" onClick={handleRemoveFriend} style={{ cursor: 'pointer' }}>
+          <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444' }}>
+            <UserX size={14} /> {t('friend.remove_friend')}
           </span>
         </div>
 

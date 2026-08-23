@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get } from "../api/http";
+import { fetchFriends } from "../api/friends";
 import { useStore, Friend, Group } from "../store";
 import { useI18n } from "../hooks/useI18n";
 import { MessageCircle, Users } from "lucide-react";
@@ -19,23 +20,9 @@ export default function Chats() {
   const [search, setSearch] = useState("");
 
   const loadContacts = useCallback(() => {
-    // ✅ 获取好友列表
-    get("/api/friend/friends")
-      .then((data) => {
-        // data 是数组 [{ id, userId, friendId, status, remark, ... }]
-        // 映射成 store 需要的 Friend 结构
-        const friends = data.map((item: any) => ({
-          id: String(item.friendId || item.userId),
-          username: String(item.friendId), // 后端没返回，暂时空
-          nickname: String(item.friendId), // 后端没返回，暂时空
-          avatar: "",
-          is_online: false,
-          auto_delete: 0,
-          remark: item.remark || "",
-        }));
-
-        setFriends(friends);
-      })
+    // ✅ 获取好友列表（后端返回 status=1 的记录，映射成 store 的 Friend 结构）
+    fetchFriends()
+      .then(setFriends)
       .catch(() => {});
 
     // 群组接口先保留

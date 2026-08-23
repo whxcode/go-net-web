@@ -32,7 +32,7 @@ export default function Login() {
 
       if (isRegister) {
         // 注册
-        const result = await post("/api/user/register", {
+        const result = await post("/api/users/register", {
           username,
           password,
           nickname: nickname || username,
@@ -45,7 +45,7 @@ export default function Login() {
         return;
       } else {
         // 登录
-        const result = await post("/api/user/login", {
+        const result = await post("/api/users/login", {
           username,
           password,
         });

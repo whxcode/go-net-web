@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, post, del, put } from "../api/http";
+import { fetchFriends } from "../api/friends";
 import { useStore, Friend, Group } from "../store";
 import { useI18n } from "../hooks/useI18n";
+import { avatarUrl } from "../utils/avatar";
 import { onWs } from "../api/socket";
 import {
   ChevronLeft,
@@ -33,6 +35,7 @@ export default function Contacts() {
   const groups = useStore((s) => s.groups);
   const setFriends = useStore((s) => s.setFriends);
   const setGroups = useStore((s) => s.setGroups);
+  const user = useStore((s) => s.user);
 
   const [tab, setTab] = useState<Tab>("friends");
   const [requests, setRequests] = useState<any[]>([]);
@@ -67,22 +70,9 @@ export default function Contacts() {
   console.log({ friends });
 
   const loadContacts = useCallback(() => {
-    // ✅ 获取好友列表
-    get("/api/friend/friends")
-      .then((data) => {
-        // data 是数组 [{ id, userId, friendId, status, remark, ... }]
-        // 映射成 store 需要的 Friend 结构
-        const friends = data.map((item: any) => ({
-          id: String(item.friendId || item.userId),
-          username: String(item.friendId), // 后端没返回，暂时空
-          nickname: String(item.friendId), // 后端没返回，暂时空
-          avatar: "",
-          is_online: false,
-          auto_delete: 0,
-          remark: item.remark || "",
-        }));
-        setFriends(friends);
-      })
+    // ✅ 获取好友列表（后端返回 status=1 的记录，映射成 store 的 Friend 结构）
+    fetchFriends()
+      .then(setFriends)
       .catch(() => {});
 
     // 群组接口先保留
@@ -110,9 +100,7 @@ export default function Contacts() {
   useEffect(() => {
     const unsub1 = onWs("friend_accepted", () => {
       // Someone accepted our request — refresh friends list
-      get<Friend[]>("/api/friends")
-        .then(setFriends)
-        .catch(() => {});
+      fetchFriends().then(setFriends).catch(() => {});
     });
     const unsub2 = onWs("friend_request", () => {
       // Someone sent us a request — refresh requests
@@ -158,7 +146,7 @@ export default function Contacts() {
     try {
       const params = new URLSearchParams({ search: query });
       // res 已经是 data 内容（数组）
-      const users = await get(`/api/user/users?${params.toString()}`);
+      const users = await get(`/api/users/users?${params.toString()}`);
       // users 就是数组，直接使用
       setSearchResults(
         users.map((u: any) => ({
@@ -181,38 +169,39 @@ export default function Contacts() {
 
   const sendFriendRequest = async (friendId: string) => {
     try {
-      const result = await post<{ ok: boolean; already_friends?: boolean }>(
-        "/api/friends/request",
-        { friend_id: friendId, message: requestMsg || null },
-      );
-      if (result.already_friends) {
-        const updated = await get<Friend[]>("/api/friends");
-        setFriends(updated);
-      }
+      // 后端 body: {friendID, remark}
+      await post("/api/friends/request", {
+        friendID: Number(friendId),
+        remark: requestMsg || "",
+      });
       setRequestMsg("");
       setSentIds((prev) => new Set(prev).add(friendId));
       setSearchResults([]);
       setSearchQ("");
       setShowAdd(false);
-      alert(
-        t(
-          result.already_friends
-            ? "contacts.already_friend"
-            : "contacts.request_sent",
-        ),
-      );
+      alert(t("contacts.request_sent"));
     } catch (err: any) {
       alert(err.message || t("common.error"));
     }
   };
 
-  const acceptRequest = async (friendId: string) => {
+  const acceptRequest = async (recordId: number) => {
     try {
-      await post("/api/friends/accept", { friend_id: friendId });
-      setRequests((prev) => prev.filter((r) => r.id !== friendId));
+      // 后端 PUT /friends/{id} status: 1=同意 2=拒绝 3=删除（id 为好友记录 id）
+      await put(`/api/friends/${recordId}`, { status: 1 });
+      setRequests((prev) => prev.filter((r) => r.id !== recordId));
       // Refresh friends list to show the newly added friend
-      const updated = await get<Friend[]>("/api/friends");
+      const updated = await fetchFriends();
       setFriends(updated);
+    } catch (err: any) {
+      alert(err.message || t("common.error"));
+    }
+  };
+
+  const rejectRequest = async (recordId: number) => {
+    try {
+      await put(`/api/friends/${recordId}`, { status: 2 });
+      setRequests((prev) => prev.filter((r) => r.id !== recordId));
     } catch (err: any) {
       alert(err.message || t("common.error"));
     }
@@ -591,7 +580,11 @@ export default function Contacts() {
           {searchResults.map((u) => (
             <div key={u.id} className="list-item">
               <div className="avatar avatar-sm">
-                {u.avatar ? <img src={u.avatar} alt="" /> : u.nickname?.[0]}
+                {u.avatar ? (
+                  <img src={avatarUrl(u.avatar)} alt="" />
+                ) : (
+                  u.nickname?.[0]
+                )}
               </div>
               <div className="list-content">
                 <div className="name">{u.nickname}</div>
@@ -962,23 +955,44 @@ export default function Contacts() {
 
         {/* ── Requests Tab ───────────────────────────── */}
         {tab === "requests" &&
-          requests.map((r) => (
-            <div key={r.id} className="list-item">
-              <div className="avatar">
-                {r.avatar ? <img src={r.avatar} alt="" /> : r.nickname?.[0]}
+          requests.map((r) => {
+            // friendId = 当前用户 → 别人向我发起的申请（可同意/拒绝）
+            // userId = 当前用户 → 我发起的申请（只能等对方处理）
+            const isIncoming = String(r.friendId) === String(user?.id)
+            return (
+              <div key={r.id} className="list-item">
+                <div className="avatar">
+                  {r.avatar ? (
+                    <img src={avatarUrl(r.avatar)} alt="" />
+                  ) : (
+                    r.nickname?.[0]
+                  )}
+                </div>
+                <div className="list-content">
+                  <div className="name">{r.nickname}</div>
+                  {r.remark && <div className="preview">{r.remark}</div>}
+                </div>
+                {isIncoming ? (
+                  <>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => acceptRequest(r.id)}
+                    >
+                      {t("contacts.accept")}
+                    </button>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => rejectRequest(r.id)}
+                    >
+                      {t("contacts.reject")}
+                    </button>
+                  </>
+                ) : (
+                  <span className="preview">{t("contacts.pending")}</span>
+                )}
               </div>
-              <div className="list-content">
-                <div className="name">{r.nickname}</div>
-                {r.message && <div className="preview">{r.message}</div>}
-              </div>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => acceptRequest(r.id)}
-              >
-                {t("contacts.accept")}
-              </button>
-            </div>
-          ))}
+            )
+          })}
 
         {/* ── Tags Tab ───────────────────────────────── */}
         {tab === "tags" && (

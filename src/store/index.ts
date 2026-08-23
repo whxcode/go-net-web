@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { applyNativeProxy, clearNativeProxy } from '../api/proxy-bridge'
 import { cacheMediaIn, readOfflineData, writeOfflineData } from '../utils/offlineCache'
+import { avatarUrl } from '../utils/avatar'
 
 // ── Message cache persistence helpers ──────────────────────────
 const MSG_CACHE_KEY = 'pp_msg_cache'
@@ -68,6 +69,8 @@ export interface User {
 
 export interface Friend {
   id: string
+  /** 好友记录 id（后端 friends 表主键，同意/拒绝/删除好友时用） */
+  record_id?: string
   username: string
   nickname: string
   avatar?: string
@@ -274,9 +277,11 @@ export const useStore = create<AppStore>((set, get) => ({
   user: JSON.parse(localStorage.getItem('user') || 'null'),
   setAuth: (token, user, refreshToken) => {
     localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(user))
+    // avatar 是文件 hash → 统一转成预览 URL（/api/file/{hash}）
+    const storedUser = { ...user, avatar: avatarUrl(user.avatar) }
+    localStorage.setItem('user', JSON.stringify(storedUser))
     if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
-    set({ token, user })
+    set({ token, user: storedUser })
   },
   setToken: (token, refreshToken) => {
     localStorage.setItem('token', token)
@@ -315,8 +320,10 @@ export const useStore = create<AppStore>((set, get) => ({
   // Friends
   friends: readOfflineData<Friend[]>('friends', []),
   setFriends: (friends) => {
-    writeOfflineData('friends', friends)
-    set({ friends })
+    // avatar 是文件 hash → 统一转成预览 URL
+    const converted = friends.map(f => ({ ...f, avatar: avatarUrl(f.avatar) }))
+    writeOfflineData('friends', converted)
+    set({ friends: converted })
   },
   updateFriendOnline: (id, online) => set(s => {
     const friends = s.friends.map(f => f.id === id ? { ...f, is_online: online } : f)
@@ -327,8 +334,13 @@ export const useStore = create<AppStore>((set, get) => ({
   // Groups
   groups: readOfflineData<Group[]>('groups', []),
   setGroups: (groups) => {
-    writeOfflineData('groups', groups)
-    set({ groups })
+    const converted = groups.map(g => ({
+      ...g,
+      avatar: avatarUrl(g.avatar),
+      members: g.members?.map(m => ({ ...m, avatar: avatarUrl(m.avatar) })),
+    }))
+    writeOfflineData('groups', converted)
+    set({ groups: converted })
   },
 
   // Messages (initialized from localStorage cache)

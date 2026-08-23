@@ -5,6 +5,7 @@ import { useStore } from '../store'
 import { useI18n } from '../hooks/useI18n'
 import { ChevronLeft, ChevronRight, Film, Heart, ImageIcon, MessageCircle, Pencil, Trash2, VenetianMask, X, Play, FileText, User, Flag } from 'lucide-react'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
+import { avatarUrl } from '../utils/avatar'
 
 /** Capture the first frame of a video File as a JPEG Blob */
 const generateVideoThumbnail = (file: File): Promise<Blob | null> =>
@@ -157,7 +158,7 @@ export default function Timeline() {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <div className="avatar" style={{ width: 16, height: 16, fontSize: 9 }}>
-                        {p.is_anonymous ? <VenetianMask size={18} /> : (p.user?.avatar ? <img src={p.user.avatar} alt="" /> : p.user?.nickname?.[0])}
+                        {p.is_anonymous ? <VenetianMask size={18} /> : (p.user?.avatar ? <img src={avatarUrl(p.user.avatar)} alt="" /> : p.user?.nickname?.[0])}
                       </div>
                       <span>{p.is_anonymous ? t('timeline.anonymous') : p.user?.nickname}</span>
                     </div>

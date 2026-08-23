@@ -10,6 +10,7 @@ import { isPushSupported, isPushSubscribed, subscribePush, unsubscribePush } fro
 import { logoutOneSignal } from '../api/onesignal'
 import { Camera, ChevronLeft, ChevronRight, Smartphone, Check, Copy, KeyRound, Shield, Fingerprint, Moon, Globe, Bell, Download as DownloadIcon, Monitor, CheckCircle, FileText, ExternalLink, Wifi, Trash2, AlertTriangle } from 'lucide-react'
 import { clearOfflineCache } from '../utils/offlineCache'
+import { avatarUrl } from '../utils/avatar'
 
 type SubView = null | 'password' | 'avatar' | '2fa' | 'sessions' | 'language' | 'myqr' | 'proxy'
 const APP_VERSION = '2.4.7'
@@ -429,7 +430,8 @@ function ChangePassword({ onBack, t }: { onBack: () => void; t: (k: string) => s
     if (newPw !== confirmPw) { setError(t('password.mismatch')); return }
     setLoading(true)
     try {
-      await put('/api/users/password', { old_password: oldPw, new_password: newPw })
+      // 后端要求驼峰字段
+      await put('/api/users/password', { oldPassword: oldPw, newPassword: newPw })
       setSuccess(true)
     } catch (err: any) {
       setError(err.message || t('common.error'))
@@ -490,12 +492,13 @@ function ChangeAvatar({ onBack, t, user, setAuth }: { onBack: () => void; t: (k:
     try {
       // Upload file
       const res = await uploadFile(file)
+      if (!res.hash) throw new Error('upload failed')
       // Update avatar
-      await put('/api/users/avatar', { avatar: res.url })
-      setPreview(res.url)
-      // Update local store
+      // 后端返回完整 user 对象（avatar 为 hash），直接用它更新本地
+      const updatedUser = await put<any>('/api/users/avatar', { avatar: res.hash })
       const token = localStorage.getItem('token') || ''
-      setAuth(token, { ...user, avatar: res.url })
+      setAuth(token, { ...user, ...updatedUser })
+      setPreview(avatarUrl(updatedUser?.avatar || res.hash))
     } catch {
     } finally {
       setUploading(false)

@@ -162,21 +162,32 @@ export const del = <T = any>(path: string, body?: any) =>
 
 export async function uploadFile(
   file: File,
-): Promise<{ url: string; key: string }> {
+): Promise<{ hash: string; url: string; filename: string; size: number }> {
   const form = new FormData();
-  form.append("file", file);
-  const res = await post<{ url: string; key: string }>("/api/upload", form);
-  return { ...res, url: normalizeFileUrl(res.url) };
+  form.append("files", file);
+  // 后端文件上传：POST /api/file/upload → data: [{hash, filename, size}]
+  const res = await post<Array<{ hash: string; filename: string; size: number }>>(
+    "/api/file/upload",
+    form,
+  );
+  const first = Array.isArray(res) ? res[0] : null;
+  const hash = first?.hash || "";
+  return {
+    hash,
+    url: hash ? `/api/file/${hash}` : "",
+    filename: first?.filename || file.name,
+    size: first?.size || file.size,
+  };
 }
 
 export function uploadFileWithProgress(
   file: File,
   onProgress?: (pct: number) => void,
-): Promise<{ url: string; key: string }> {
+): Promise<{ hash: string; url: string; filename: string; size: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const form = new FormData();
-    form.append("file", file);
+    form.append("files", file);
 
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable && onProgress) {
@@ -188,7 +199,14 @@ export function uploadFileWithProgress(
       try {
         const data = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && data.code === 200) {
-          resolve({ ...data.data, url: normalizeFileUrl(data.data.url) });
+          const first = Array.isArray(data.data) ? data.data[0] : null;
+          const hash = first?.hash || "";
+          resolve({
+            hash,
+            url: hash ? `/api/file/${hash}` : "",
+            filename: first?.filename || file.name,
+            size: first?.size || file.size,
+          });
         } else {
           reject(new Error(data.message || `HTTP ${xhr.status}`));
         }
@@ -201,7 +219,7 @@ export function uploadFileWithProgress(
     xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
 
     const token = localStorage.getItem("token");
-    xhr.open("POST", `${getBase()}/api/upload`);
+    xhr.open("POST", `${getBase()}/api/file/upload`);
     if (token) xhr.setRequestHeader("token", token);
     xhr.send(form);
   });

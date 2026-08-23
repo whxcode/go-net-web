@@ -1,0 +1,20 @@
+
+一下接口参考这个文档:
+./用户接口文档.md
+./文件接口文档.md
+
+
+| POST | /api/user/register | `{id, username}`（body: {username, password, nickname}） | ✅ |
+| POST | /api/user/login | `{id, username, token}`（body: {username, password}，token 必须） | ✅ |
+| GET | /api/users/:id | 用户对象 `{id, username, nickname, avatar, is_online}` | ⬜ |
+| GET | /api/user/users?search=关键字 | 用户数组 `[{id, username, nickname, avatar}]`（搜索用户用） | ⬜ |
+| PUT | /api/users/password | 任意（body: {old_password, new_password}） | ⬜ |
+| PUT | /api/users/avatar | 任意（FormData） | ⬜ |
+
+
+能先把用户的 中文名称、头像 修改做了吗？
+可能有些不一样；比如 修改用户头像； 原本接口直接要 FormData
+但实际后端的接口
+先调用文件上传；返回一个 hash 。提交这个hash就行。
+使用的时候；根据文件预览接口+hash就能获取图片
+你先分析有没有不清楚的地方；如果有；请及时提出来；不要直接修改代码

@@ -25,7 +25,7 @@ export default function Discover() {
       if (userId) {
         // Send friend request then navigate to user profile
         try {
-          await post('/api/friends/request', { friend_id: userId })
+          await post('/api/friends/request', { friendID: Number(userId) })
         } catch {}
         navigate(`/user/${userId}`)
       }

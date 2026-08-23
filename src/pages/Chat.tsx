@@ -5,12 +5,14 @@ import { useI18n } from '../hooks/useI18n'
 import { useCallContext } from '../contexts/CallContext'
 import { useGroupCallContext } from '../contexts/GroupCallContext'
 import { get, post, put, uploadFileWithProgress, normalizeFileUrl } from '../api/http'
+import { fetchFriends } from '../api/friends'
 import { sendWs, onWs, convertServerMessage } from '../api/socket'
 import { Shield } from 'lucide-react'
 import { ChevronLeft, ChevronDown, Lock, Settings, Timer, ImageIcon, Film, Plus, Mic, Download, Paperclip, AlertTriangle, Clock, Package as PackageIcon, FileText, File as FileIcon, Image as LucideImage, Music, Video, Check, CheckCheck, Phone, VideoIcon, SendHorizonal, Smile, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react'
 import StickerMedia from '../components/StickerMedia'
 import { decodeMessagePayload, encodeMessagePayload, type ReplyReference } from '../utils/messagePayload'
 import { cacheSticker, cacheStickerPack } from '../utils/stickerCache'
+import { avatarUrl } from '../utils/avatar'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
 import { useKeepAwake } from '../hooks/useKeepAwake'
 
@@ -897,7 +899,7 @@ export default function Chat() {
         const g = await get('/api/groups')
         useStore.getState().setGroups(g)
       } else {
-        const f = await get('/api/friends')
+        const f = await fetchFriends()
         useStore.getState().setFriends(f)
       }
     } catch {}
@@ -1258,7 +1260,7 @@ export default function Chat() {
             >
               {!isMe && isGroup && (
                 <div className="avatar avatar-sm">
-                  {msg.from_avatar ? <img src={msg.from_avatar} alt="" /> : (msg.from_nickname?.[0] || '?')}
+                  {msg.from_avatar ? <img src={avatarUrl(msg.from_avatar)} alt="" /> : (msg.from_nickname?.[0] || '?')}
                 </div>
               )}
               <div>

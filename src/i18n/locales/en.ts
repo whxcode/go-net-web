@@ -186,6 +186,8 @@ export const en: Record<string, string> = {
   'friend.remark_placeholder': 'Set a remark name',
   'friend.no_remark': 'No remark set',
   'friend.original_name': 'Original name',
+  'friend.remove_friend': 'Remove Friend',
+  'friend.remove_confirm': 'Remove this friend? Both sides will no longer be friends.',
   'friend.privacy': 'Moment Privacy',
   'friend.hide_their_moments': "Don't see their Moments",
   'friend.hide_my_moments': "Don't let them see mine",

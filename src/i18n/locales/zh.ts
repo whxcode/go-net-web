@@ -195,6 +195,8 @@ export const zh: Record<string, string> = {
   'friend.remark_placeholder': '设置备注名称',
   'friend.no_remark': '未设置备注',
   'friend.original_name': '原名',
+  'friend.remove_friend': '删除好友',
+  'friend.remove_confirm': '确定删除该好友吗？删除后双方将不再是好友。',
   'friend.privacy': '朋友圈权限',
   'friend.hide_their_moments': '不看他的朋友圈',
   'friend.hide_my_moments': '不让他看我的朋友圈',
