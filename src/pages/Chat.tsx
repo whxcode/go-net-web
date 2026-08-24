@@ -13,6 +13,7 @@ import StickerMedia from '../components/StickerMedia'
 import { decodeMessagePayload, encodeMessagePayload, type ReplyReference } from '../utils/messagePayload'
 import { cacheSticker, cacheStickerPack } from '../utils/stickerCache'
 import { avatarUrl } from '../utils/avatar'
+import { uuid } from '../utils/uuid'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
 import { useKeepAwake } from '../hooks/useKeepAwake'
 
@@ -641,7 +642,7 @@ export default function Chat() {
     }
     const reply = replyingTo
     const displayWireContent = encodeMessagePayload(content, reply)
-    const clientMsgId = crypto.randomUUID()
+    const clientMsgId = uuid()
     setSending(true)
     try {
       if (msgType === 'text') setInput('')

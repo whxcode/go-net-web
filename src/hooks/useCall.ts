@@ -10,6 +10,7 @@ import {
 } from 'livekit-client'
 import { post } from '../api/http'
 import { sendWs, onWs } from '../api/socket'
+import { uuid } from '../utils/uuid'
 import { playCallRingtone, stopRingtone, showBrowserNotification } from '../utils/notification'
 
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'connected' | 'error'
@@ -222,7 +223,7 @@ export function useCall(userId: string | undefined) {
     const info = {
       peerId,
       isVideo,
-      callId: `dc_${Date.now()}_${crypto.randomUUID().replaceAll('-', '')}`,
+      callId: `dc_${Date.now()}_${uuid().replaceAll('-', '')}`,
     }
     callStateRef.current = 'outgoing'
     callInfoRef.current = info

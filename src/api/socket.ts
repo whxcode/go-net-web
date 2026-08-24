@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { uuid } from '../utils/uuid'
 
 type MessageHandler = (data: any) => void | Promise<void>
 
@@ -204,7 +205,7 @@ export function sendWs(data: any): boolean {
     return false
   }
   if (data?.type === 'message') {
-    data.client_msg_id ||= crypto.randomUUID()
+    data.client_msg_id ||= uuid()
     queueOutbound(data)
     if (!ready || ws?.readyState !== WebSocket.OPEN) return !!useStore.getState().token
   }
