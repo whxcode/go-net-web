@@ -47,8 +47,9 @@ function enqueueSequenced(fn: () => Promise<void>) {
 }
 
 // ── 后端明文协议 (Go) ──────────────────────────────────────────
-// 服务端消息: {type:0, id, msgId, senderId, receiverId, elements:[{type:0|1|2|3, content, url, name, size, ...}], status, createdAt}
-// 客户端心跳: {type:1} / 服务端心跳回复: {type:2}
+// 服务端消息: {type:0|1, id, msgId, senderId, receiverId, elements:[{type:0|1|2|3, content, url, name, size, ...}], status, createdAt}
+//   type: 0=好友消息(senderId→receiverId=好友ID) 1=群消息(senderId→receiverId=群ID)
+// 心跳: 客户端发 {type:2}(PING) / 服务端回 {type:3}(PONG)
 const ELEMENT_TYPE_TO_MSG_TYPE: Record<number, string> = { 0: 'text', 1: 'image', 2: 'video', 3: 'file' }
 
 export function convertServerMessage(m: any) {
@@ -59,11 +60,14 @@ export function convertServerMessage(m: any) {
   const ts = m.createdAt ? Date.parse(m.createdAt) || Date.now() : Date.now()
   // 媒体消息：后端传 hash，前端拼预览接口地址
   const mediaUrl = el?.url || (el?.hash ? `/api/file/${el.hash}` : '')
+  // 群消息：type=1，receiverId 即群ID，useSocket 据此路由到群会话
+  const isGroup = Number(m.type) === 1
   return {
     // 后端推送若未携带 msgId/createdAt：用 发送者-接收者-时间 兜底，保证有 id 可去重
     id: rawId || `${m.senderId}-${m.receiverId}-${ts}`,
     from: String(m.senderId ?? ''),
     to: String(m.receiverId ?? ''),
+    group_id: isGroup ? String(m.receiverId ?? '') : undefined,
     msg_type: msgType,
     // 明文内容：文本走 content，媒体走 url（hash 拼接预览接口）
     decrypted: elType === 0 ? (el.content ?? '') : mediaUrl,
@@ -108,8 +112,8 @@ export function connectWs() {
         socket.close(4000, 'heartbeat timeout')
         return
       }
-      // 心跳 type:1
-      socket.send(JSON.stringify({ type: 1 }))
+      // 心跳 type:2 (PING)
+      socket.send(JSON.stringify({ type: 2 }))
     }, 25000)
   }
 
@@ -118,14 +122,14 @@ export function connectWs() {
       const data = JSON.parse(e.data)
       const type = data?.type
 
-      // 心跳回复 type:2
-      if (type === 2) {
+      // 心跳回复 type:3 (PONG)
+      if (type === 3) {
         lastPongAt = Date.now()
         return
       }
 
-      // 普通消息 type:0 → 转成前端 ChatMessage 结构派发
-      if (type === 0) {
+      // 消息 type:0 好友 / type:1 群 → 转成前端 ChatMessage 结构派发（群消息带 group_id）
+      if (type === 0 || type === 1) {
         dispatchIncoming({ type: 'message', ...convertServerMessage(data) })
         return
       }

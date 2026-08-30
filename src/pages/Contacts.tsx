@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, post, del, put } from "../api/http";
 import { fetchFriends } from "../api/friends";
+import { fetchGroups } from "../api/groups";
 import { useStore, Friend, Group } from "../store";
 import { useI18n } from "../hooks/useI18n";
 import { avatarUrl } from "../utils/avatar";
@@ -75,8 +76,8 @@ export default function Contacts() {
       .then(setFriends)
       .catch(() => {});
 
-    // 群组接口先保留
-    get("/api/groups")
+    // 群组列表（后端 camelCase → 前端 Group 结构）
+    fetchGroups()
       .then(setGroups)
       .catch(() => {});
 
@@ -232,8 +233,8 @@ export default function Contacts() {
       setShowCreateGroup(false);
       setNewGroupName("");
       setSelectedMembers(new Set());
-      // Refresh groups and navigate to new group
-      get("/api/groups")
+      // Refresh groups and navigate to the new group chat
+      fetchGroups()
         .then(setGroups)
         .catch(() => {});
       navigate(`/chat/${res.id}?group=1`);
@@ -848,7 +849,7 @@ export default function Contacts() {
               >
                 <div className="avatar">
                   {g.avatar ? (
-                    <img src={g.avatar} alt="" />
+                    <img src={avatarUrl(g.avatar)} alt="" />
                   ) : (
                     <Users size={20} />
                   )}

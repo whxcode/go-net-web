@@ -1,17 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { get, post, put, del, uploadFileWithProgress } from '../api/http'
+import { post, put, uploadFileWithProgress } from '../api/http'
+import { fetchGroup, fetchGroups } from '../api/groups'
 import { useI18n } from '../hooks/useI18n'
 import { useStore } from '../store'
 import { avatarUrl } from '../utils/avatar'
-import { QRCodeCanvas } from '../components/QRCode'
-import { AlertTriangle, BellOff, Camera, ChevronLeft, ChevronRight, ChevronDown, Megaphone, MessageCircle, Pencil, Settings, Shield, Smartphone, Users, UserPlus, Plus, Check } from 'lucide-react'
-
-const INVITE_EXPIRY_OPTIONS = [
-  { days: 7, key: 'group.qr_expire_1w' },
-  { days: 30, key: 'group.qr_expire_1m' },
-  { days: 90, key: 'group.qr_expire_3m' },
-]
+import { BellOff, Camera, ChevronLeft, ChevronRight, Megaphone, MessageCircle, Pencil, Settings, Users, UserPlus, Check } from 'lucide-react'
 
 export default function GroupInfo() {
   const { id } = useParams<{ id: string }>()
@@ -24,14 +18,8 @@ export default function GroupInfo() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(-1)
   const [myMuted, setMyMuted] = useState(false)
-  const [showQR, setShowQR] = useState(false)
-  const [inviteId, setInviteId] = useState('')
-  const [inviteExpiry, setInviteExpiry] = useState(7)
-  const [inviteLoading, setInviteLoading] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set())
-  const [encryptionLoading, setEncryptionLoading] = useState(false)
-  const [showEncryptConfirm, setShowEncryptConfirm] = useState(false)
   const avatarRef = useRef<HTMLInputElement>(null)
   const friends = useStore(s => s.friends)
 
@@ -54,16 +42,16 @@ export default function GroupInfo() {
   const inviteFriends = async () => {
     if (selectedFriends.size === 0) return
     try {
-      await post(`/api/groups/${id}/members`, { user_ids: [...selectedFriends] })
+      await post(`/api/groups/${id}/members`, { memberIDs: [...selectedFriends].map(Number) })
       reload()
-      get('/api/groups').then(g => useStore.getState().setGroups(g)).catch(() => {})
+      fetchGroups().then(g => useStore.getState().setGroups(g)).catch(() => {})
       setSelectedFriends(new Set())
       setShowInvite(false)
     } catch {}
   }
 
   const reload = () => {
-    if (id) get(`/api/groups/${id}`).then((g: any) => {
+    if (id) fetchGroup(id).then((g: any) => {
       setGroup(g)
       // Find current user's mute status
       const me = g.members?.find((m: any) => m.id === user?.id)
@@ -82,10 +70,10 @@ export default function GroupInfo() {
     setUploadProgress(0)
     try {
       const res = await uploadFileWithProgress(file, (pct) => setUploadProgress(pct))
-      await put(`/api/groups/${id}`, { avatar: res.url })
-      setGroup((prev: any) => ({ ...prev, avatar: res.url }))
+      await put(`/api/groups/${id}`, { avatar: res.hash })
+      setGroup((prev: any) => ({ ...prev, avatar: res.hash }))
       // Also refresh groups in global store
-      get('/api/groups').then(g => useStore.getState().setGroups(g))
+      fetchGroups().then(g => useStore.getState().setGroups(g))
     } catch {}
     setUploadProgress(-1)
     setUploading(false)
@@ -100,7 +88,7 @@ export default function GroupInfo() {
       await put(`/api/groups/${id}`, body)
       setGroup((prev: any) => ({ ...prev, [editing]: editVal }))
       if (editing === 'name') {
-        get('/api/groups').then(g => useStore.getState().setGroups(g))
+        fetchGroups().then(g => useStore.getState().setGroups(g))
       }
     } catch {}
     setEditing(null)
@@ -111,10 +99,10 @@ export default function GroupInfo() {
     if (!id) return
     const newVal = !myMuted
     try {
-      await post(`/api/groups/${id}/mute`, { muted: newVal })
+      await put(`/api/groups/${id}/putMember`, { isMuted: newVal ? 1 : 0 })
       setMyMuted(newVal)
       // Refresh groups in store so mute status is picked up by notification handler
-      get('/api/groups').then(g => useStore.getState().setGroups(g)).catch(() => {})
+      fetchGroups().then(g => useStore.getState().setGroups(g)).catch(() => {})
     } catch {}
   }
 
@@ -296,52 +284,6 @@ export default function GroupInfo() {
         </div>
       )}
 
-      {/* Encryption confirm dialog */}
-      {showEncryptConfirm && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fade-in .2s ease',
-        }}>
-          <div style={{
-            background: 'var(--bg-card)', borderRadius: 16, padding: 24,
-            width: 'min(360px, 90vw)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-          }}>
-            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-              {t('group.encryption')}
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-              {t('group.encryption_switch_confirm')}
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowEncryptConfirm(false)}
-                style={{
-                  padding: '8px 20px', borderRadius: 10, border: '1px solid var(--border)',
-                  background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 14,
-                }}>{t('common.cancel')}</button>
-              <button onClick={async () => {
-                setEncryptionLoading(true)
-                try {
-                  await put(`/api/groups/${id}/encryption`, { encrypted: !group.encrypted })
-                  reload()
-                  useStore.getState().setMessages(id!, [])
-                  get('/api/groups').then(g => useStore.getState().setGroups(g)).catch(() => {})
-                } catch {}
-                setEncryptionLoading(false)
-                setShowEncryptConfirm(false)
-              }}
-                disabled={encryptionLoading}
-                style={{
-                  padding: '8px 20px', borderRadius: 10, border: 'none',
-                  background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                  opacity: encryptionLoading ? 0.6 : 1,
-                }}>{encryptionLoading ? '...' : t('common.save')}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
 
       <div className="page-header">
@@ -436,51 +378,6 @@ export default function GroupInfo() {
             </div>
           </div>
 
-          {/* Encryption mode toggle */}
-          <div className="list-item" onClick={() => {
-            if (isOwner) setShowEncryptConfirm(true)
-            else alert(t('group.encryption_owner_only') || 'Only the group owner can change encryption mode')
-          }} style={{ cursor: isOwner ? 'pointer' : 'default', borderRadius: 12, marginBottom: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-              <span style={{ fontSize: 20 }}><Shield size={18} /></span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{t('group.encryption')}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {group.encrypted ? t('group.encryption_on') : t('group.encryption_off')}
-                </div>
-              </div>
-            </div>
-            {/* Toggle switch */}
-            <div style={{
-              width: 44, height: 24, borderRadius: 12, padding: 2,
-              background: group.encrypted ? 'var(--accent)' : 'var(--border)',
-              transition: 'background .2s ease', cursor: isOwner ? 'pointer' : 'default', flexShrink: 0,
-              opacity: isOwner ? 1 : 0.5,
-            }}>
-              <div style={{
-                width: 20, height: 20, borderRadius: 10,
-                background: '#fff',
-                transform: group.encrypted ? 'translateX(20px)' : 'translateX(0)',
-                transition: 'transform .2s ease',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-              }} />
-            </div>
-          </div>
-
-          {/* Bot warning when encryption is on */}
-          {group.encrypted && (
-            <div style={{
-              margin: '0 0 8px', padding: 12, borderRadius: 10,
-              background: 'rgba(255, 149, 0, 0.1)', border: '1px solid rgba(255, 149, 0, 0.25)',
-              display: 'flex', alignItems: 'flex-start', gap: 8,
-            }}>
-              <AlertTriangle size={16} style={{ color: '#ff9500', flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontSize: 12, color: '#ff9500', lineHeight: 1.4 }}>
-                {t('group.encryption_bot_warning')}
-              </div>
-            </div>
-          )}
-
           {/* Send message */}
           <div className="list-item" onClick={() => navigate(`/chat/${id}?group=1`)}
             style={{ cursor: 'pointer', borderRadius: 12, marginBottom: 6 }}>
@@ -490,70 +387,7 @@ export default function GroupInfo() {
             </div>
             <span style={{ opacity: 0.4, fontSize: 14 }}><ChevronRight size={14} /></span>
           </div>
-          {/* Group QR Code */}
-          <div className="list-item" onClick={async () => {
-              if (!showQR) {
-                setInviteLoading(true)
-                try {
-                  const res = await post(`/api/groups/${id}/invite`, { expires_days: inviteExpiry })
-                  setInviteId(res.invite_id)
-                  setShowQR(true)
-                } catch {}
-                setInviteLoading(false)
-              } else {
-                setShowQR(false)
-              }
-            }}
-            style={{ cursor: 'pointer', borderRadius: 12, marginBottom: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 20 }}><Smartphone size={18} /></span>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>{t('group.qr_code')}</div>
-            </div>
-            <span style={{ opacity: 0.4, fontSize: 14 }}>{inviteLoading ? '...' : showQR ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-          </div>
 
-          {/* Inline invite QR panel */}
-          {showQR && inviteId && (
-            <div style={{
-              margin: '0 0 12px', padding: 20, borderRadius: 16,
-              background: 'var(--bg-card)', display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 14,
-            }}>
-              {/* Expiry picker */}
-              <div style={{ display: 'flex', gap: 6 }}>
-                {INVITE_EXPIRY_OPTIONS.map(opt => (
-                  <button
-                    key={opt.days}
-                    onClick={async () => {
-                      setInviteExpiry(opt.days)
-                      setInviteLoading(true)
-                      try {
-                        const res = await post(`/api/groups/${id}/invite`, { expires_days: opt.days })
-                        setInviteId(res.invite_id)
-                      } catch {}
-                      setInviteLoading(false)
-                    }}
-                    style={{
-                      padding: '6px 14px', borderRadius: 10, border: 'none', fontSize: 12,
-                      fontWeight: inviteExpiry === opt.days ? 700 : 400, cursor: 'pointer',
-                      background: inviteExpiry === opt.days ? 'var(--accent)' : 'var(--bg-primary)',
-                      color: inviteExpiry === opt.days ? '#fff' : 'var(--text-primary)',
-                      transition: 'all .15s ease',
-                    }}
-                  >
-                    {t(opt.key)}
-                  </button>
-                ))}
-              </div>
-
-              {/* QR code */}
-              <QRCodeCanvas data={`paperphoneplus://invite/${inviteId}`} size={200} />
-
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                {t('group.qr_hint')}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="divider" />
@@ -582,7 +416,7 @@ export default function GroupInfo() {
               <div className="list-content" style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span className="name">{m.nickname}</span>
-                  {m.role === 'owner' && (
+                  {m.role === 2 && (
                     <span style={{
                       fontSize: 10, padding: '1px 6px', borderRadius: 6,
                       background: 'var(--accent)', color: '#fff', fontWeight: 600,
@@ -598,30 +432,15 @@ export default function GroupInfo() {
 
         <div className="divider" />
 
-        {/* ── Danger zone ── */}
+        {/* ── Danger zone（解散群功能未上线，仅普通成员可退群） ── */}
         <div style={{ padding: '8px 16px 32px' }}>
-          {isOwner ? (
-            <button onClick={async () => {
-              if (!window.confirm(t('group.disband_confirm'))) return
-              try {
-                await del(`/api/groups/${id}`)
-                const g = await get('/api/groups')
-                useStore.getState().setGroups(g)
-                navigate('/chats')
-              } catch {}
-            }}
-              style={{
-                width: '100%', padding: '12px 0', borderRadius: 12, border: 'none',
-                background: 'rgba(255, 59, 48, 0.12)', color: '#ff3b30',
-                fontSize: 14, fontWeight: 600, cursor: 'pointer',
-              }}>{t('group.disband')}</button>
-          ) : (
+          {!isOwner && (
             <button onClick={async () => {
               if (!window.confirm(t('group.leave_confirm'))) return
               try {
-                await post(`/api/groups/${id}/leave`)
-                const g = await get('/api/groups')
-                useStore.getState().setGroups(g)
+                // 后端退群 = putMember 把 status 置 1
+                await put(`/api/groups/${id}/putMember`, { status: 1 })
+                fetchGroups().then(g => useStore.getState().setGroups(g)).catch(() => {})
                 navigate('/chats')
               } catch {}
             }}

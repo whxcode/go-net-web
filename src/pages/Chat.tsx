@@ -6,6 +6,7 @@ import { useCallContext } from '../contexts/CallContext'
 import { useGroupCallContext } from '../contexts/GroupCallContext'
 import { get, post, put, uploadFileWithProgress, normalizeFileUrl } from '../api/http'
 import { fetchFriends } from '../api/friends'
+import { fetchGroup } from '../api/groups'
 import { sendWs, onWs, convertServerMessage } from '../api/socket'
 import { Shield } from 'lucide-react'
 import { ChevronLeft, ChevronDown, Lock, Settings, Timer, ImageIcon, Film, Plus, Mic, Download, Paperclip, AlertTriangle, Clock, Package as PackageIcon, FileText, File as FileIcon, Image as LucideImage, Music, Video, Check, CheckCheck, Phone, VideoIcon, SendHorizonal, Smile, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react'
@@ -416,6 +417,19 @@ export default function Chat() {
   const friend = friends.find(f => f.id === id)
   const group = groups.find(g => g.id === id)
   const chatName = isGroup ? (group?.name || id) : (friend?.nickname || id)
+
+  // 群聊进入时拉群详情（GET /api/groups/:id），拿成员昵称/头像用于消息发送者展示；
+  // 直接进入/刷新页面时 store 里可能还没有该群数据
+  useEffect(() => {
+    if (!isGroup || !id) return
+    fetchGroup(id).then(g => {
+      if (!g) return
+      const list = useStore.getState().groups
+      const idx = list.findIndex(x => x.id === g.id)
+      const next = idx >= 0 ? list.map(x => x.id === g.id ? g : x) : [...list, g]
+      useStore.getState().setGroups(next)
+    }).catch(() => {})
+  }, [isGroup, id])
   const isOwner = isGroup && group?.owner_id === user?.id
   const currentAutoDelete = isGroup ? (group?.auto_delete ?? 0) : (friend?.auto_delete ?? 0)
   const scrollStorageKey = `pp_chat_scroll_v1:${user?.id || 'anonymous'}:${isGroup ? 'group' : 'private'}:${id || ''}`
@@ -636,10 +650,6 @@ export default function Chat() {
     const content = text || input.trim()
     if (msgType === 'text' && !content) return
     if (!id || !user || sending) return
-    if (isGroup) {
-      alert('群聊暂不支持')
-      return
-    }
     const reply = replyingTo
     const displayWireContent = encodeMessagePayload(content, reply)
     const clientMsgId = uuid()
@@ -663,7 +673,7 @@ export default function Chat() {
       ;(window as any).__pendingMsg = pendingMsg
 
       let sent = false
-      // 明文私聊：按后端协议发送 {type:0, senderId, receiverId, elements}
+      // 明文协议：好友消息 {type:0, senderId, receiverId, elements}；群消息 {type:1, senderId, receiverId=群ID, elements}
       // elements[].type: 0文本 1图片 2视频 3文件（媒体消息传 hash）
       const EL_TYPE: Record<string, number> = { text: 0, image: 1, video: 2, file: 3 }
       const element: any = { type: EL_TYPE[msgType] ?? 0, content: displayWireContent }
@@ -676,7 +686,7 @@ export default function Chat() {
         if (_extra.height) element.height = _extra.height
       }
       sent = sendWs({
-        type: 0,
+        type: isGroup ? 1 : 0,
         senderId: Number(user.id),
         receiverId: Number(id),
         elements: [element],
@@ -1201,7 +1211,8 @@ export default function Chat() {
                 style={{ fontSize: 18 }}><VideoIcon size={18} /></button>
             </>
           )}
-          <button className="icon-btn" onClick={() => setShowSettings(true)} style={{ fontSize: 18 }} title={t('chat.settings')}><Settings size={18} /></button>
+          {/* 群聊：齿轮直接进群设置页；好友聊天：打开聊天设置面板 */}
+          <button className="icon-btn" onClick={() => isGroup ? navigate(`/group/${id}`) : setShowSettings(true)} style={{ fontSize: 18 }} title={t('chat.settings')}><Settings size={18} /></button>
         </div>
       </div>
 
@@ -1244,6 +1255,10 @@ export default function Chat() {
       <div ref={messagesContainerRef} className="chat-messages" onScroll={updateScrollState}>
         {messages.map((msg, i) => {
           const isMe = msg.from === user?.id
+          // 群消息发送者：优先消息自带昵称，否则从群成员列表映射（WS 消息不带昵称）
+          const senderMember = isGroup ? group?.members?.find((m: any) => m.id === msg.from) : null
+          const senderName = msg.from_nickname || senderMember?.nickname || msg.from
+          const senderAvatar = msg.from_avatar || senderMember?.avatar
           const rawDisplayText = msg.decrypted || msg.ciphertext || ''
           const payload = decodeMessagePayload(rawDisplayText)
           const displayText = payload.body
@@ -1272,12 +1287,12 @@ export default function Chat() {
             >
               {!isMe && isGroup && (
                 <div className="avatar avatar-sm">
-                  {msg.from_avatar ? <img src={avatarUrl(msg.from_avatar)} alt="" /> : (msg.from_nickname?.[0] || '?')}
+                  {senderAvatar ? <img src={avatarUrl(senderAvatar)} alt="" /> : (senderName?.[0] || '?')}
                 </div>
               )}
               <div>
                 {!isMe && isGroup && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>{msg.from_nickname || msg.from}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>{senderName}</div>
                 )}
                 <div className="msg-bubble" style={isSticker && !payload.reply ? { background: 'transparent', boxShadow: 'none', padding: 0 } : undefined}>
                   {payload.reply && (

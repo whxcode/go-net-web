@@ -111,8 +111,8 @@ export interface Group {
   owner_id: string
   notice?: string
   auto_delete: number
-  muted?: boolean
-  encrypted?: boolean
+  muted: boolean
+  encrypted: boolean
   members?: GroupMember[]
 }
 
@@ -121,8 +121,10 @@ export interface GroupMember {
   username: string
   nickname: string
   avatar?: string
-  role: string
+  /** 0-成员 1-管理员 2-群主 */
+  role: number
   muted: boolean
+  status: number
 }
 
 export interface ProxyConfig {

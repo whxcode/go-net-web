@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { get } from "../api/http";
 import { fetchFriends } from "../api/friends";
+import { fetchGroups } from "../api/groups";
 import { useStore, Friend, Group } from "../store";
 import { useI18n } from "../hooks/useI18n";
 import { MessageCircle, Users } from "lucide-react";
 import { decodeMessagePayload } from "../utils/messagePayload";
+import { avatarUrl } from "../utils/avatar";
 
 export default function Chats() {
   const { t } = useI18n();
@@ -25,8 +26,8 @@ export default function Chats() {
       .then(setFriends)
       .catch(() => {});
 
-    // 群组接口先保留
-    get("/api/groups")
+    // 群组列表（后端 camelCase → 前端 Group 结构）
+    fetchGroups()
       .then(setGroups)
       .catch(() => {});
   }, []);
@@ -140,7 +141,7 @@ export default function Chats() {
             >
               <div className="avatar" style={{ position: "relative" }}>
                 {chat.avatar ? (
-                  <img src={chat.avatar} alt="" />
+                  <img src={avatarUrl(chat.avatar)} alt="" />
                 ) : chat.isGroup ? (
                   <Users size={20} />
                 ) : (
