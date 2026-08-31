@@ -568,10 +568,10 @@ export default function Chat() {
     scrollRestoredRef.current = false
     isNearBottomRef.current = true
     setShowJumpToBottom(false)
-    const path = isGroup ? `/api/messages/group/${id}?limit=50000` : `/api/messages/private/${id}?limit=50000`
+    // 历史消息接口：好友 GET /api/messages/friend/:friendID，群 GET /api/messages/group/:groupID
+    const path = isGroup ? `/api/messages/group/${id}?limit=50000` : `/api/messages/friend/${id}?limit=50000`
 
     const loadMessages = async () => {
-      // 后端历史消息接口：GET /api/messages/private/:friendId?limit=&offset=
       // 返回 data: { data: [Message...], size, total }（兼容直接返回数组）
       const raw = await get<any>(path).catch(() => null)
       const msgs = Array.isArray(raw) ? raw : (raw?.data ?? [])
