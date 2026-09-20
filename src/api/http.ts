@@ -6,9 +6,6 @@ let refreshInFlight: Promise<string | null> | null = null;
 
 function getBase(): string {
   return "";
-  return (
-    localStorage.getItem("serverUrl") || import.meta.env.VITE_API_URL || ""
-  );
 }
 
 // 你的后端响应格式
@@ -166,10 +163,9 @@ export async function uploadFile(
   const form = new FormData();
   form.append("files", file);
   // 后端文件上传：POST /api/file/upload → data: [{hash, filename, size}]
-  const res = await post<Array<{ hash: string; filename: string; size: number }>>(
-    "/api/file/upload",
-    form,
-  );
+  const res = await post<
+    Array<{ hash: string; filename: string; size: number }>
+  >("/api/file/upload", form);
   const first = Array.isArray(res) ? res[0] : null;
   const hash = first?.hash || "";
   return {
