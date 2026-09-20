@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { get, post, del, uploadFile as httpUploadFile, normalizeFileUrl } from '../api/http'
+import { get, post, uploadFile as httpUploadFile, normalizeFileUrl } from '../api/http'
 import { fetchFriends } from '../api/friends'
 import { useStore, Friend } from '../store'
 import { useI18n } from '../hooks/useI18n'
-import { Camera, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Heart, ImageIcon, MessageCircle, Plus, Tag, X, Check, Globe, Users, Flag } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Heart, ImageIcon, Lock, MessageCircle, Plus, Tag, X, Check, Globe, Users, Flag } from 'lucide-react'
+import { fetchMoments, createMoment, deleteMoment as deleteMomentApi, likeMoment, unlikeMoment, addMomentComment } from '../api/moments'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
 import { avatarUrl } from '../utils/avatar'
 
@@ -72,24 +73,24 @@ export default function Moments() {
   }
 
   useEffect(() => {
-    get('/api/moments').then(data => { setMoments(data); writeOfflineData('moments', data); setLoading(false) }).catch(() => setLoading(false))
+    fetchMoments().then(data => { setMoments(data); writeOfflineData('moments', data); setLoading(false) }).catch(() => setLoading(false))
     fetchFriends().then(f => useStore.getState().setFriends(f)).catch(() => {})
   }, [])
 
   const refresh = async () => {
-    try { const data = await get('/api/moments'); setMoments(data); writeOfflineData('moments', data) } catch {}
+    try { const data = await fetchMoments(); setMoments(data); writeOfflineData('moments', data) } catch {}
   }
 
-  const toggleLike = async (id: number, liked: boolean) => {
+  const toggleLike = async (id: string | number, liked: boolean) => {
     try {
-      if (liked) await del(`/api/moments/${id}/like`)
-      else await post(`/api/moments/${id}/like`, {})
+      if (liked) await unlikeMoment(id)
+      else await likeMoment(id)
       refresh()
     } catch {}
   }
 
-  const deleteMoment = async (id: number) => {
-    try { await del(`/api/moments/${id}`); refresh() } catch {}
+  const removeMoment = async (id: string | number) => {
+    try { await deleteMomentApi(id); refresh() } catch {}
   }
 
   const formatTime = (ts: number) => {
@@ -104,10 +105,10 @@ export default function Moments() {
   const [commentingId, setCommentingId] = useState<number | null>(null)
   const [commentText, setCommentText] = useState('')
 
-  const submitComment = async (momentId: number) => {
+  const submitComment = async (momentId: string | number) => {
     if (!commentText.trim()) return
     try {
-      await post(`/api/moments/${momentId}/comments`, { text_content: commentText.trim() })
+      await addMomentComment(momentId, commentText.trim())
       setCommentText('')
       setCommentingId(null)
       refresh()
@@ -161,7 +162,7 @@ export default function Moments() {
                   <div className="moment-time">{formatTime(m.created_at)}</div>
                 </div>
                 {isOwner && (
-                  <button className="icon-btn" onClick={() => deleteMoment(m.id)} style={{ fontSize: 14, color: 'var(--text-muted)' }} title={t('common.delete')}><X size={14} /></button>
+                  <button className="icon-btn" onClick={() => removeMoment(m.id)} style={{ fontSize: 14, color: 'var(--text-muted)' }} title={t('common.delete')}><X size={14} /></button>
                 )}
                 {!isOwner && (
                   <button className="icon-btn" onClick={() => { setReportingId(reportingId === m.id ? null : m.id); setReportReason('') }} style={{ fontSize: 14, color: 'var(--text-muted)' }} title={t('report.report_post')}><Flag size={14} /></button>
@@ -191,9 +192,9 @@ export default function Moments() {
               )}
 
               {/* Visibility badge */}
-              {m.visibility && m.visibility !== 'public' && isOwner && (
+              {m.visibility !== 'public' && isOwner && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                  {m.visibility === 'whitelist' ? <><Eye size={14} /> {t('moments.whitelist')}</> : <><EyeOff size={14} /> {t('moments.blacklist')}</>}
+                  <Lock size={14} /> {t('moments.visibility')}
                 </div>
               )}
 
@@ -401,28 +402,13 @@ function MomentComposer({ t, friends, onBack, onPublished }: {
     setSubmitting(true)
     setError('')
 
-    // Build visibility rules
-    const visibility_rules = (visibility !== 'public')
-      ? [
-          ...selectedFriends.map(id => ({ target_type: 'user', target_id: id })),
-          ...selectedTags.map(id => ({ target_type: 'tag', target_id: String(id) })),
-        ]
-      : undefined
-
-    const payload: any = {
-      text_content: text.trim(),
-      visibility,
-      visibility_rules,
-    }
-    if (mediaMode === 'images' && images.length > 0) {
-      payload.images = images
-    }
-    if (mediaMode === 'video' && videoUrl) {
-      payload.video = { url: videoUrl, thumbnail: videoThumb || null, duration: videoDuration }
-    }
-
     try {
-      await post('/api/moments', payload)
+      await createMoment({
+        text: text.trim(),
+        images: mediaMode === 'images' ? images : undefined,
+        video: mediaMode === 'video' && videoUrl ? { url: videoUrl, thumbnail: videoThumb, duration: videoDuration } : null,
+        visibility,
+      })
       onPublished()
     } catch {
       setError(t('moments.publish_failed'))

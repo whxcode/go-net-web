@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { get, post, del, uploadFile as httpUploadFile, normalizeFileUrl } from '../api/http'
+import { post, uploadFile as httpUploadFile, normalizeFileUrl } from '../api/http'
+import { fetchTimelines, createTimeline, deleteTimeline, likeTimeline, unlikeTimeline, addTimelineComment } from '../api/timeline'
 import { useStore } from '../store'
 import { useI18n } from '../hooks/useI18n'
-import { ChevronLeft, ChevronRight, Film, Heart, ImageIcon, MessageCircle, Pencil, Trash2, VenetianMask, X, Play, FileText, User, Flag } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Film, Heart, ImageIcon, MessageCircle, Pencil, Trash2, X, Play, FileText, Flag } from 'lucide-react'
 import { readOfflineData, writeOfflineData } from '../utils/offlineCache'
 import { avatarUrl } from '../utils/avatar'
 
@@ -49,7 +50,7 @@ export default function Timeline() {
 
   const loadPosts = async () => {
     try {
-      const data = await get('/api/timeline')
+      const data = await fetchTimelines()
       setPosts(data)
       writeOfflineData('timeline', data)
     } catch {}
@@ -58,12 +59,14 @@ export default function Timeline() {
 
   useEffect(() => { loadPosts() }, [])
 
+  const selected = posts.find(p => p.id === selectedPost)
+
   if (showComposer) {
     return <PostComposer t={t} onBack={() => setShowComposer(false)} onPublished={() => { setShowComposer(false); loadPosts() }} />
   }
 
-  if (selectedPost) {
-    return <PostDetail t={t} postId={selectedPost} user={user} onBack={() => { setSelectedPost(null); loadPosts() }} />
+  if (selectedPost && selected) {
+    return <PostDetail t={t} post={selected} user={user} onBack={() => { setSelectedPost(null); loadPosts() }} onRefresh={loadPosts} />
   }
 
   return (
@@ -158,9 +161,9 @@ export default function Timeline() {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <div className="avatar" style={{ width: 16, height: 16, fontSize: 9 }}>
-                        {p.is_anonymous ? <VenetianMask size={18} /> : (p.user?.avatar ? <img src={avatarUrl(p.user.avatar)} alt="" /> : p.user?.nickname?.[0])}
+                        {p.user?.avatar ? <img src={avatarUrl(p.user.avatar)} alt="" /> : p.user?.nickname?.[0]}
                       </div>
-                      <span>{p.is_anonymous ? t('timeline.anonymous') : p.user?.nickname}</span>
+                      <span>{p.user?.nickname}</span>
                     </div>
                     <span><Heart size={14} fill="currentColor" /> {p.like_count || 0}</span>
                   </div>
@@ -177,12 +180,11 @@ export default function Timeline() {
 /* ═══════════════════════════════════════════════════════════════════════════
    Post Detail — full-screen view with comments
    ═══════════════════════════════════════════════════════════════════════════ */
-function PostDetail({ t, postId, user, onBack }: {
-  t: (k: string) => string, postId: number, user: any, onBack: () => void
+function PostDetail({ t, post, user, onBack, onRefresh }: {
+  t: (k: string) => string, post: any, user: any, onBack: () => void, onRefresh: () => void
 }) {
-  const [p, setPost] = useState<any>(null)
+  const p = post
   const [commentText, setCommentText] = useState('')
-  const [isAnon, setIsAnon] = useState(false)
   const [imgIdx, setImgIdx] = useState(0)
   const [showReport, setShowReport] = useState(false)
   const [reportReason, setReportReason] = useState('')
@@ -198,48 +200,34 @@ function PostDetail({ t, postId, user, onBack }: {
     if (!reportReason) return
     setReportSubmitting(true)
     try {
-      await post(`/api/report`, { target_type: 'timeline_post', target_id: String(postId), reason: reportReason })
+      await post(`/api/report`, { target_type: 'timeline_post', target_id: String(p.id), reason: reportReason })
       alert(t('report.success'))
       setShowReport(false)
       setReportReason('')
     } catch { alert(t('report.failed')) } finally { setReportSubmitting(false) }
   }
 
-  const loadPost = async () => {
-    const cacheKey = `timeline:${postId}`
-    setPost(readOfflineData(cacheKey, null))
-    try {
-      const data = await get(`/api/timeline/${postId}`)
-      setPost(data)
-      writeOfflineData(cacheKey, data)
-    } catch {}
-  }
-  useEffect(() => { loadPost() }, [postId])
-
   const toggleLike = async () => {
-    if (!p) return
     const liked = p.likes?.some((l: any) => l.id === user?.id)
     try {
-      if (liked) await del(`/api/timeline/${postId}/like`)
-      else await post(`/api/timeline/${postId}/like`, {})
-      loadPost()
+      if (liked) await unlikeTimeline(p.id)
+      else await likeTimeline(p.id)
+      onRefresh()
     } catch {}
   }
 
   const submitComment = async () => {
     if (!commentText.trim()) return
     try {
-      await post(`/api/timeline/${postId}/comments`, { text_content: commentText.trim(), is_anonymous: isAnon })
+      await addTimelineComment(p.id, commentText.trim())
       setCommentText('')
-      loadPost()
+      onRefresh()
     } catch {}
   }
 
   const deletePost = async () => {
-    try { await del(`/api/timeline/${postId}`); onBack() } catch {}
+    try { await deleteTimeline(p.id); onBack() } catch {}
   }
-
-  if (!p) return <div className="page"><div className="loading-spinner" /></div>
 
   const liked = p.likes?.some((l: any) => l.id === user?.id)
   const isOwner = p.user_id === user?.id
@@ -331,11 +319,11 @@ function PostDetail({ t, postId, user, onBack }: {
         <div style={{ padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div className="avatar avatar-sm">
-              {p.is_anonymous ? <VenetianMask size={18} /> : (p.user?.avatar ? <img src={p.user.avatar} alt="" /> : p.user?.nickname?.[0]?.toUpperCase())}
+              {p.user?.avatar ? <img src={avatarUrl(p.user.avatar)} alt="" /> : p.user?.nickname?.[0]?.toUpperCase()}
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>
-                {p.is_anonymous ? t('timeline.anonymous') : p.user?.nickname}
+                {p.user?.nickname}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 {new Date(p.created_at).toLocaleString()}
@@ -395,11 +383,11 @@ function PostDetail({ t, postId, user, onBack }: {
               display: 'flex', gap: 8,
             }}>
               <div className="avatar" style={{ width: 28, height: 28, fontSize: 12, flexShrink: 0 }}>
-                {c.is_anonymous ? <VenetianMask size={18} /> : c.nickname?.[0]?.toUpperCase()}
+                {c.nickname?.[0]?.toUpperCase()}
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>
-                  {c.is_anonymous ? t('timeline.anonymous') : c.nickname}
+                  {c.nickname}
                   <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8, fontSize: 11 }}>
                     {new Date(c.created_at).toLocaleString()}
                   </span>
@@ -434,15 +422,6 @@ function PostDetail({ t, postId, user, onBack }: {
         background: 'var(--bg-primary)', borderTop: '1px solid var(--border)',
         alignItems: 'center',
       }}>
-        <button
-          onClick={() => setIsAnon(!isAnon)}
-          style={{
-            width: 32, height: 32, borderRadius: 16, border: 'none',
-            background: isAnon ? 'var(--accent)' : 'var(--bg-card)',
-            fontSize: 16, cursor: 'pointer', flexShrink: 0,
-          }}
-          title={t('timeline.anonymous')}
-        >{isAnon ? <VenetianMask size={18} /> : <User size={18} />}</button>
         <input
           className="input"
           placeholder={t('timeline.write_comment')}
@@ -473,7 +452,6 @@ function PostComposer({ t, onBack, onPublished }: {
   const [videoThumb, setVideoThumb] = useState('')
   const [videoDuration, setVideoDuration] = useState(0)
   const [mediaMode, setMediaMode] = useState<'none' | 'images' | 'video'>('none')
-  const [isAnon, setIsAnon] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -555,15 +533,11 @@ function PostComposer({ t, onBack, onPublished }: {
       images.forEach(url => media.push({ url, media_type: 'image' }))
     }
     if (mediaMode === 'video' && videoUrl) {
-      media.push({ url: videoUrl, media_type: 'video', duration: videoDuration, thumbnail: videoThumb || null })
+      media.push({ url: videoUrl, media_type: 'video' })
     }
 
     try {
-      await post('/api/timeline', {
-        text_content: text.trim(),
-        is_anonymous: isAnon,
-        media: media.length > 0 ? media : undefined,
-      })
+      await createTimeline({ text: text.trim(), media })
       onPublished()
     } catch { setError(t('timeline.publish_failed')) }
     finally { setSubmitting(false) }
@@ -584,28 +558,6 @@ function PostComposer({ t, onBack, onPublished }: {
         </button>
       </div>
       <div className="page-body" style={{ padding: 16 }}>
-        {/* Anonymous toggle */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
-          padding: '8px 12px', borderRadius: 10, background: isAnon ? 'rgba(255,152,0,0.1)' : 'var(--bg-card)',
-        }}>
-          <button
-            onClick={() => setIsAnon(!isAnon)}
-            style={{
-              width: 36, height: 36, borderRadius: 18, border: 'none',
-              background: isAnon ? '#ff9800' : 'var(--border)',
-              fontSize: 18, cursor: 'pointer',
-            }}
-          >{isAnon ? <VenetianMask size={18} /> : <User size={18} />}</button>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>
-              {isAnon ? t('timeline.posting_anonymous') : t('timeline.posting_public')}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {isAnon ? t('timeline.anon_desc') : t('timeline.public_desc')}
-            </div>
-          </div>
-        </div>
 
         {/* Text input */}
         <textarea

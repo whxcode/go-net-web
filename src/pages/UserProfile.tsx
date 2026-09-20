@@ -5,6 +5,7 @@ import { fetchFriends } from '../api/friends'
 import { useStore } from '../store'
 import { useI18n } from '../hooks/useI18n'
 import { avatarUrl } from '../utils/avatar'
+import { fetchUserMoments, fetchPrivacy, setPrivacy } from '../api/moments'
 import { Camera, ChevronLeft, ChevronRight, Film, Lock, MessageCircle, Pencil, Phone, Flag, Ban, UserX } from 'lucide-react'
 
 export default function UserProfile() {
@@ -50,14 +51,14 @@ export default function UserProfile() {
     // Load user info
     get(`/api/users/${id}`).then(setUser).catch(() => {})
 
-    // Load privacy settings
-    get(`/api/moments/privacy/${id}`).then((data: any) => {
-      setHideTheir(!!data.hide_their)
-      setHideMine(!!data.hide_mine)
+    // Load privacy settings（后端无记录时 data 为 null）
+    fetchPrivacy(id).then(({ hideTheir, hideMine }) => {
+      setHideTheir(hideTheir)
+      setHideMine(hideMine)
     }).catch(() => {})
 
     // Load latest moments
-    get(`/api/moments/user/${id}?limit=3`).then(setMoments).catch(() => {})
+    fetchUserMoments(id, 3).then(setMoments).catch(() => {})
 
     // Set remark from friend store
     if (friend?.remark) setRemark(friend.remark)
@@ -72,17 +73,14 @@ export default function UserProfile() {
   }, [friend?.remark])
 
   const handleTogglePrivacy = async (field: 'hide_their' | 'hide_mine', value: boolean) => {
-    const payload: any = { target_id: id }
-    if (field === 'hide_their') {
-      setHideTheir(value)
-      payload.hide_their = value
-      payload.hide_mine = hideMine
-    } else {
-      setHideMine(value)
-      payload.hide_their = hideTheir
-      payload.hide_mine = value
+    if (!id) return
+    const next = {
+      hideTheir: field === 'hide_their' ? value : hideTheir,
+      hideMine: field === 'hide_mine' ? value : hideMine,
     }
-    try { await post('/api/moments/privacy', payload) } catch {}
+    if (field === 'hide_their') setHideTheir(value)
+    else setHideMine(value)
+    try { await setPrivacy(id, next) } catch {}
   }
 
   const saveRemark = async () => {
