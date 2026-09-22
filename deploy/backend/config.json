@@ -1,0 +1,23 @@
+{
+  "_说明": "这是后端 go-net 的配置文件。容器里的地址一律用服务名，不要写 127.0.0.1",
+  "_说明_server": "port 是容器内部端口，不要动；对外的网站端口在 .env 的 WEB_PORT 里配",
+  "server": {
+    "port": ":8080",
+    "fileOss": "./fileStoragePath"
+  },
+  "log": {
+    "pathDir": "./log",
+    "level": 3
+  },
+  "_说明_database": "host 用 compose 的服务名 mysql（不是 127.0.0.1）；password 要跟 .env 的 MYSQL_ROOT_PASSWORD 一致",
+  "database": {
+    "host": "mysql:3306",
+    "user": "root",
+    "password": "123456",
+    "name": "go-net"
+  },
+  "_说明_redis": "同样用服务名 redis",
+  "redis": {
+    "addr": "redis:6379"
+  }
+}
