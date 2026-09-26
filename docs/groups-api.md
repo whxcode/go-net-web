@@ -14,7 +14,7 @@
 {
   "id": 1,
   "name": "项目讨论组",
-  "avatar": "a1b2c3d4...",          // 群头像：文件 hash，空字符串则无头像；前端自动拼 /api/file/{hash}
+  "avatar": "a1b2c3d4...",          // 群头像：文件 hash，空字符串则无头像；前端自动拼 /api/file/preview/{hash}
   "ownerId": 2,                      // 群主用户 id
   "notice": "群公告内容",
   "autoDelete": 0,                   // 自动删除秒数，0=关闭
@@ -133,6 +133,6 @@ CREATE TABLE group_invites (
 
 1. **owner_id 判断**：前端用 `group.owner_id === user.id` 判断是否群主，解散/改名/公告等操作按钮只对群主显示
 2. **role 字符串**：members[].role 必须是 'owner'/'admin'/'member'，前端只判断 `=== 'owner'`
-3. **avatar 存 hash**：群头像和成员头像都存文件 hash（空字符串表示没有），前端 avatarUrl() 自动拼 /api/file/{hash}
+3. **avatar 存 hash**：群头像和成员头像都存文件 hash（空字符串表示没有），前端 avatarUrl() 自动拼 /api/file/preview/{hash}
 4. **创建群字段名注意**：创建群 body 用 `member_ids`，拉人进群 body 用 `user_ids`（前端已按此写死，别搞混）
 5. **群聊消息**：前端群聊页会请求 `GET /api/messages/group/:groupId?limit=50000`，返回结构同好友消息（{data:{data:[Message...],size,total}}）——群聊功能启用时再做，现在前端不调用

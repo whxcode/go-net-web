@@ -48,7 +48,7 @@
 
 - `members[].role`：0 成员 / 1 管理员 / 2 群主
 - `members[].status`：0 正常 / 1 已退群（status=1 的记录不出现在列表/详情返回中）
-- `avatar` 一律存文件 hash，前端显示时拼 `/api/file/{hash}`
+- `avatar` 一律存文件 hash，前端显示时拼 `/api/file/preview/{hash}`
 
 ## 新增接口（后端待开发）
 

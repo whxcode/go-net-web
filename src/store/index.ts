@@ -279,7 +279,7 @@ export const useStore = create<AppStore>((set, get) => ({
   user: JSON.parse(localStorage.getItem('user') || 'null'),
   setAuth: (token, user, refreshToken) => {
     localStorage.setItem('token', token)
-    // avatar 是文件 hash → 统一转成预览 URL（/api/file/{hash}）
+    // avatar 是文件 hash → 统一转成预览 URL（/api/file/preview/{hash}）
     const storedUser = { ...user, avatar: avatarUrl(user.avatar) }
     localStorage.setItem('user', JSON.stringify(storedUser))
     if (refreshToken) localStorage.setItem('refreshToken', refreshToken)

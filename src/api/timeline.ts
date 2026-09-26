@@ -4,7 +4,7 @@
 import { get, post, del } from './http'
 
 /** 元素 URL：优先 url；否则用文件 hash 拼预览接口 */
-const elementUrl = (el: any): string => el?.url || (el?.hash ? `/api/file/${el.hash}` : '')
+const elementUrl = (el: any): string => el?.url || (el?.hash ? `/api/file/preview/${el.hash}` : '')
 
 /** 后端 elements[] → 页面用的文本/媒体（type: 0文本 1图片 2视频 3文件） */
 export function parseElements(elements: any[] | null | undefined) {

@@ -59,7 +59,7 @@ export function convertServerMessage(m: any) {
   const rawId = String(m.msgId || m.id || '')
   const ts = m.createdAt ? Date.parse(m.createdAt) || Date.now() : Date.now()
   // 媒体消息：后端传 hash，前端拼预览接口地址
-  const mediaUrl = el?.url || (el?.hash ? `/api/file/${el.hash}` : '')
+  const mediaUrl = el?.url || (el?.hash ? `/api/file/preview/${el.hash}` : '')
   // 群消息：type=1，receiverId 即群ID，useSocket 据此路由到群会话
   const isGroup = Number(m.type) === 1
   return {

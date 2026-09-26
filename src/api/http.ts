@@ -157,22 +157,29 @@ export const del = <T = any>(path: string, body?: any) =>
     body: body ? JSON.stringify(body) : undefined,
   });
 
+/** 上传接口返回的单个文件信息。后端当前只回文件 hash 字符串，这里保留对象写法做兼容 */
+type UploadedFileInfo = { hash: string; filename?: string; size?: number }
+
 export async function uploadFile(
   file: File,
 ): Promise<{ hash: string; url: string; filename: string; size: number }> {
   const form = new FormData();
   form.append("files", file);
-  // 后端文件上传：POST /api/file/upload → data: [{hash, filename, size}]
-  const res = await post<
-    Array<{ hash: string; filename: string; size: number }>
-  >("/api/file/upload", form);
+  // 后端文件上传：POST /api/file/upload
+  // 返回 data 是文件 hash 列表（string[]）；这里同时兼容 [{hash,filename,size}] 的对象数组
+  const res = await post<Array<string | UploadedFileInfo>>(
+    "/api/file/upload",
+    form,
+  );
   const first = Array.isArray(res) ? res[0] : null;
-  const hash = first?.hash || "";
+  const info: UploadedFileInfo | null =
+    typeof first === "string" ? { hash: first } : first || null;
+  const hash = info?.hash || "";
   return {
     hash,
-    url: hash ? `/api/file/${hash}` : "",
-    filename: first?.filename || file.name,
-    size: first?.size || file.size,
+    url: hash ? `/api/file/preview/${hash}` : "",
+    filename: info?.filename || file.name,
+    size: info?.size || file.size,
   };
 }
 
@@ -196,12 +203,14 @@ export function uploadFileWithProgress(
         const data = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && data.code === 200) {
           const first = Array.isArray(data.data) ? data.data[0] : null;
-          const hash = first?.hash || "";
+          // data.data: 文件 hash 列表（string[]），兼容 [{hash,filename,size}]
+          const info = typeof first === "string" ? { hash: first } : first || null;
+          const hash = info?.hash || "";
           resolve({
             hash,
-            url: hash ? `/api/file/${hash}` : "",
-            filename: first?.filename || file.name,
-            size: first?.size || file.size,
+            url: hash ? `/api/file/preview/${hash}` : "",
+            filename: info?.filename || file.name,
+            size: info?.size || file.size,
           });
         } else {
           reject(new Error(data.message || `HTTP ${xhr.status}`));
